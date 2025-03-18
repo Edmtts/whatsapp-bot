@@ -63,3 +63,56 @@ const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
     console.log(`🚀 Sunucu ${PORT} portunda çalışıyor...`);
 });
+// Kullanıcının sipariş numarasını alıp İkas API’den sipariş bilgilerini getiren fonksiyon
+async function getOrderStatus(orderId) {
+    try {
+        const response = await axios.post(process.env.IKAS_API_URL, {
+            query: `
+                query {
+                    order(id: "${orderId}") {
+                        id
+                        status
+                        trackingNumber
+                        shippingCompany
+                    }
+                }
+            `
+        }, {
+            headers: {
+                "Content-Type": "application/json",
+                "Client-Id": process.env.IKAS_CLIENT_ID,
+                "Client-Secret": process.env.IKAS_CLIENT_SECRET
+            }
+        });
+
+        return response.data.data.order;
+    } catch (error) {
+        console.error("❌ Sipariş sorgulama hatası:", error);
+        return null;
+    }
+}
+
+// Kullanıcı "Siparişimin Durumu" butonuna bastığında sipariş bilgilerini getirme
+app.post("/webhook", async (req, res) => {
+    if (req.body.entry && req.body.entry[0].changes && req.body.entry[0].changes[0].value.messages) {
+        const message = req.body.entry[0].changes[0].value.messages[0];
+        const from = message.from;
+        const text = message.text?.body.toLowerCase();
+
+        console.log(`📩 Yeni mesaj: ${text} (Gönderen: ${from})`);
+
+        if (text === "siparişimin durumu") {
+            await sendMessage(from, "Lütfen sipariş numaranızı girin:");
+        } else if (/^\d+$/.test(text)) { // Eğer kullanıcı sadece rakam girdiyse sipariş numarası olduğunu varsayalım
+            const order = await getOrderStatus(text);
+            if (order) {
+                await sendMessage(from, `📦 Sipariş Durumu: ${order.status}\n🚚 Kargo: ${order.shippingCompany}\n📦 Takip Numarası: ${order.trackingNumber}`);
+            } else {
+                await sendMessage(from, "❌ Üzgünüm, bu sipariş numarasıyla bir sipariş bulunamadı.");
+            }
+        }
+    }
+
+    res.sendStatus(200);
+});
+
