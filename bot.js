@@ -14,9 +14,6 @@ const IKAS_API_URL = process.env.IKAS_API_URL;
 const IKAS_CLIENT_ID = process.env.IKAS_CLIENT_ID;
 const IKAS_CLIENT_SECRET = process.env.IKAS_CLIENT_SECRET;
 
-// 📌 Kullanıcıların sipariş numarasını takip etmek için geçici bir hafıza (RAM tabanlı)
-const userState = {};
-
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
@@ -46,22 +43,14 @@ app.post('/webhook', (req, res) => {
                     if (change.field === "messages" && change.value.messages) {
                         change.value.messages.forEach(message => {
                             let from = message.from;
-                            let text = message.text ? message.text.body.trim() : "";
-                            console.log(`📩 Yeni mesaj alındı: ${text} (Gönderen: ${from})`);
-
-                            // 📌 Eğer kullanıcı sipariş numarası giriyorsa, bunu al ve sorgula
-                            if (userState[from] === "awaiting_order_number") {
-                                userState[from] = null; // Kullanıcının durumunu sıfırla
-                                getOrderById(from, text); // Siparişi getir
-                                return;
-                            }
+                            console.log(`📩 Yeni mesaj alındı (Gönderen: ${from})`);
 
                             // 📌 Butona basıldıysa
                             if (message.type === "interactive" && message.interactive.type === "button_reply") {
                                 let button_id = message.interactive.button_reply.id;
 
                                 if (button_id === "siparisim") {
-                                    requestOrderNumber(from); // Sipariş numarasını sor
+                                    getOrders(from);
                                 }
                             } else {
                                 sendWhatsAppInteractiveMessage(from);
@@ -119,32 +108,26 @@ const sendWhatsAppInteractiveMessage = async (to) => {
     }
 };
 
-// 🚀 4️⃣ Kullanıcıdan Sipariş Numarası İsteme
-const requestOrderNumber = async (to) => {
-    userState[to] = "awaiting_order_number"; // Kullanıcının sipariş numarası bekleme durumuna geçmesini sağla
-    sendWhatsAppMessage(to, "📦 Lütfen sipariş numaranızı giriniz:");
-};
-
-// 🚀 5️⃣ İKAS API’den Sipariş Numarasına Göre Siparişi Getirme
-const getOrderById = async (whatsappNumber, orderId) => {
+// 🚀 4️⃣ İKAS API’den Siparişleri Getirme
+const getOrders = async (whatsappNumber) => {
     const url = IKAS_API_URL;
 
     const query = {
         query: `
-        query GetOrderById {
-            order(id: "${orderId}") {
-                id
-                status
-                totalPrice {
-                    amount
-                    currency
+        query {
+            listOrder {
+                data {
+                    id
+                    status
+                    totalFinalPrice
+                    currencyCode
                 }
             }
         }`
     };
 
     try {
-        console.log(`📡 İKAS API’ye sipariş sorgusu gönderiliyor: ${JSON.stringify(query, null, 2)}`);
+        console.log(`📡 İKAS API’ye sipariş listesi isteği gönderiliyor: ${JSON.stringify(query, null, 2)}`);
 
         const response = await axios.post(url, query, {
             headers: {
@@ -155,21 +138,29 @@ const getOrderById = async (whatsappNumber, orderId) => {
 
         console.log(`📨 İKAS API Yanıtı: ${JSON.stringify(response.data, null, 2)}`);
 
-        if (!response.data || !response.data.data || !response.data.data.order) {
-            sendWhatsAppMessage(whatsappNumber, "⚠️ Girdiğiniz sipariş numarası bulunamadı. Lütfen doğru sipariş numarası giriniz.");
+        if (!response.data || !response.data.data || !response.data.data.listOrder) {
+            sendWhatsAppMessage(whatsappNumber, "⚠️ Siparişlerinize ulaşılamıyor.");
             return;
         }
 
-        const order = response.data.data.order;
-        let message = `📦 **Sipariş Bilgileri**\n📌 **Sipariş ID:** ${order.id}\n🔹 **Durum:** ${order.status}\n💰 **Tutar:** ${order.totalPrice.amount} ${order.totalPrice.currency}`;
-        sendWhatsAppMessage(whatsappNumber, message);
+        const orders = response.data.data.listOrder.data;
+        if (orders.length > 0) {
+            let message = "📦 Son siparişleriniz:\n";
+            orders.forEach(order => {
+                message += `📌 **Sipariş ID:** ${order.id}\n🔹 **Durum:** ${order.status}\n💰 **Tutar:** ${order.totalFinalPrice} ${order.currencyCode}\n\n`;
+            });
+
+            sendWhatsAppMessage(whatsappNumber, message);
+        } else {
+            sendWhatsAppMessage(whatsappNumber, "📦 Henüz siparişiniz bulunmamaktadır.");
+        }
     } catch (error) {
         console.error("❌ İKAS API hata:", error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
         sendWhatsAppMessage(whatsappNumber, "⚠️ Sipariş bilgilerinize ulaşırken hata oluştu.");
     }
 };
 
-// 🚀 6️⃣ WhatsApp Düz Metin Mesaj Gönderme
+// 🚀 5️⃣ WhatsApp Düz Metin Mesaj Gönderme
 const sendWhatsAppMessage = async (to, message) => {
     const url = `https://graph.facebook.com/v17.0/${PHONE_NUMBER_ID}/messages`;
 
@@ -192,7 +183,7 @@ const sendWhatsAppMessage = async (to, message) => {
     }
 };
 
-// 🚀 7️⃣ Sunucuyu Başlat
+// 🚀 6️⃣ Sunucuyu Başlat
 app.listen(port, () => {
     console.log(`🚀 Sunucu ${port} portunda çalışıyor!`);
 });
