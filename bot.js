@@ -46,8 +46,16 @@ app.post('/webhook', (req, res) => {
 
                             console.log(`📩 Yeni mesaj alındı (Gönderen: ${from})`);
 
-                            // Kullanıcı herhangi bir mesaj yazdıysa, butonları otomatik gönderelim
-                            sendWhatsAppInteractiveMessage(from);
+                            // Eğer mesaj bir buton yanıtıysa
+                            if (message.type === "interactive" && message.interactive.type === "button_reply") {
+                                let button_id = message.interactive.button_reply.id;
+                                
+                                if (button_id === "siparisim") {
+                                    getOrders(from); // İKAS API'den siparişleri çek
+                                }
+                            } else {
+                                sendWhatsAppInteractiveMessage(from);
+                            }
                         });
                     }
                 });
@@ -102,7 +110,78 @@ const sendWhatsAppInteractiveMessage = async (to) => {
     }
 };
 
-// 🚀 4️⃣ Sunucuyu Başlat
+// 🚀 4️⃣ İKAS API’den Siparişleri Çekme
+const getOrders = async (whatsappNumber) => {
+    const url = IKAS_API_URL;
+
+    const query = {
+        query: `
+        query {
+            orders(first: 5, filter: { customerPhone: "${whatsappNumber}" }) {
+                edges {
+                    node {
+                        id
+                        status
+                        totalPrice {
+                            amount
+                            currency
+                        }
+                    }
+                }
+            }
+        }`
+    };
+
+    try {
+        const response = await axios.post(url, query, {
+            headers: {
+                "Authorization": `Basic ${Buffer.from(`${IKAS_CLIENT_ID}:${IKAS_CLIENT_SECRET}`).toString("base64")}`,
+                "Content-Type": "application/json"
+            }
+        });
+
+        const orders = response.data.data.orders.edges;
+        if (orders.length > 0) {
+            let message = "📦 Son 5 siparişiniz:\n";
+            orders.forEach(order => {
+                message += `📌 **Sipariş ID:** ${order.node.id}\n🔹 **Durum:** ${order.node.status}\n💰 **Tutar:** ${order.node.totalPrice.amount} ${order.node.totalPrice.currency}\n\n`;
+            });
+
+            sendWhatsAppMessage(whatsappNumber, message);
+        } else {
+            sendWhatsAppMessage(whatsappNumber, "📦 Henüz siparişiniz bulunmamaktadır.");
+        }
+    } catch (error) {
+        console.error("❌ İKAS API hata:", error.response ? error.response.data : error.message);
+        sendWhatsAppMessage(whatsappNumber, "⚠️ Sipariş bilgilerinize ulaşırken hata oluştu.");
+    }
+};
+
+// 🚀 5️⃣ WhatsApp Düz Metin Mesaj Gönderme
+const sendWhatsAppMessage = async (to, message) => {
+    const url = `https://graph.facebook.com/v17.0/${PHONE_NUMBER_ID}/messages`;
+
+    const data = {
+        messaging_product: "whatsapp",
+        to: to,
+        type: "text",
+        text: { body: message }
+    };
+
+    try {
+        const response = await axios.post(url, data, {
+            headers: {
+                Authorization: `Bearer ${ACCESS_TOKEN}`,
+                'Content-Type': 'application/json'
+            }
+        });
+        console.log("✅ Mesaj gönderildi:", response.data);
+    } catch (error) {
+        console.error("❌ Mesaj gönderme hatası:", error.response ? error.response.data : error.message);
+    }
+};
+
+// 🚀 6️⃣ Sunucuyu Başlat
 app.listen(port, () => {
     console.log(`🚀 Sunucu ${port} portunda çalışıyor!`);
 });
