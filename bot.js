@@ -13,13 +13,14 @@ const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
 const IKAS_API_URL = process.env.IKAS_API_URL;
 const IKAS_CLIENT_ID = process.env.IKAS_CLIENT_ID;
 const IKAS_CLIENT_SECRET = process.env.IKAS_CLIENT_SECRET;
+const IKAS_API_URL = `https://${process.env.IKAS_STORE_NAME}.myikas.com/api/admin/oauth/token`;
 
 
-
+// Body-parser ayarları
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-// 🚀 Webhook doğrulama
+// Webhook doğrulama
 app.get("/webhook", (req, res) => {
     const mode = req.query["hub.mode"];
     const token = req.query["hub.verify_token"];
@@ -34,7 +35,7 @@ app.get("/webhook", (req, res) => {
     }
 });
 
-// 🚀 Gelen mesajları işleme
+// Gelen mesajları işleme
 app.post("/webhook", async (req, res) => {
     try {
         const entry = req.body.entry && req.body.entry[0];
@@ -47,20 +48,11 @@ app.post("/webhook", async (req, res) => {
 
             console.log(`📩 Yeni mesaj alındı: "${messageText}" (Gönderen: ${from})`);
 
-            // Butonla ilgili yanıtlar
-            if (messageData.type === "interactive" && messageData.interactive.type === "button_reply") {
-                const buttonId = messageData.interactive.button_reply.id;
-
-                if (buttonId === "siparisim") {
-                    await getOrdersByPhone(from);
-                } else if (buttonId === "siparis_durum") {
-                    sendWhatsAppMessage(from, "Sipariş durumunuzu kontrol etmek için lütfen sipariş numaranızı girin.");
-                } else if (buttonId === "iade_iptal") {
-                    sendWhatsAppMessage(from, "İade veya iptal işlemleri için lütfen talebinizi açıklayın.");
-                }
+            if (messageText.toLowerCase() === "siparişlerim") {
+                const orders = await getOrdersByPhone(from);
+                sendWhatsAppMessage(from, `Siparişleriniz: ${orders}`);
             } else {
-                // Eğer herhangi bir buton yoksa kullanıcıya butonlu menü gönder
-                await sendWhatsAppButtonMenu(from);
+                sendWhatsAppMessage(from, `Aldığınız mesaj: "${messageText}"`);
             }
         }
 
@@ -71,56 +63,33 @@ app.post("/webhook", async (req, res) => {
     }
 });
 
-// 🚀 WhatsApp'a butonlu menü gönderme
-const sendWhatsAppButtonMenu = async (to) => {
-    const url = `https://graph.facebook.com/v17.0/${PHONE_NUMBER_ID}/messages`;
-
-    const data = {
-        messaging_product: "whatsapp",
-        to: to,
-        type: "interactive",
-        interactive: {
-            type: "button",
-            body: {
-                text: "📌 Lütfen bir işlem seçin:"
-            },
-            action: {
-                buttons: [
-                    { type: "reply", reply: { id: "siparisim", title: "📦 Siparişlerim" } },
-                    { type: "reply", reply: { id: "siparis_durum", title: "🚚 Siparişim Nerede?" } },
-                    { type: "reply", reply: { id: "iade_iptal", title: "🔄 İade ve İptal" } }
-                ]
-            }
-        }
-    };
-
+// İKAS API’den Access Token alma
+async function getAccessToken() {
     try {
-        const response = await axios.post(url, data, {
-            headers: {
-                Authorization: `Bearer ${ACCESS_TOKEN}`,
-                "Content-Type": "application/json"
-            }
-        });
+        const response = await axios.post(IKAS_API_URL, 
+            `grant_type=client_credentials&client_id=${IKAS_CLIENT_ID}&client_secret=${IKAS_CLIENT_SECRET}`,
+            { headers: { "Content-Type": "application/x-www-form-urlencoded" } }
+        );
 
-        console.log("✅ Butonlu mesaj gönderildi:", response.data);
+        console.log("✅ Access Token alındı:", response.data.access_token);
+        return response.data.access_token;
     } catch (error) {
-        console.error("❌ Butonlu mesaj gönderme hatası:", error.response ? error.response.data : error.message);
+        console.error("❌ Access Token alma hatası:", error.response ? error.response.data : error.message);
+        return null;
     }
-};
+}
 
-// 🚀 İKAS API’den telefon numarasına göre sipariş getirme
-const getOrdersByPhone = async (whatsappNumber) => {
-    const accessToken = await getAccessToken();
-    if (!accessToken) {
-        sendWhatsAppMessage(whatsappNumber, "⚠️ Sipariş bilgilerinize ulaşılamıyor.");
-        return;
+// İKAS API’den telefon numarasına göre sipariş getirme
+async function getOrdersByPhone(phone) {
+    const token = await getAccessToken();
+    if (!token) {
+        console.error("❌ Token alınamadığı için sipariş sorgulanamadı.");
+        return "Sipariş bilgilerinize ulaşılamıyor.";
     }
 
-    // +90XXXXXXXXXX formatına dönüştürme
-    let formattedPhone = whatsappNumber.replace("+", "").replace(/\D/g, "");
+    // Telefon numarası formatını düzelt
+    let formattedPhone = phone.replace("+", "").replace(/\D/g, "");
     formattedPhone = "+90" + formattedPhone;
-
-    console.log(`📞 İşlenen Telefon Numarası: ${formattedPhone}`);
 
     // Örnek bir GraphQL sorgusu
     const query = {
@@ -141,9 +110,9 @@ const getOrdersByPhone = async (whatsappNumber) => {
     };
 
     try {
-        const response = await axios.post(`${IKAS_API_URL}/graphql`, query, {
+        const response = await axios.post(`${process.env.IKAS_API_GRAPHQL}`, query, {
             headers: {
-                Authorization: `Bearer ${accessToken}`,
+                Authorization: `Bearer ${token}`,
                 "Content-Type": "application/json"
             }
         });
@@ -152,40 +121,23 @@ const getOrdersByPhone = async (whatsappNumber) => {
         const userOrders = orders.filter(order => order.customer && order.customer.phone && order.customer.phone.includes(formattedPhone));
 
         if (userOrders.length === 0) {
-            sendWhatsAppMessage(whatsappNumber, "📦 Telefon numaranıza ait sipariş bulunmamaktadır.");
-            return;
+            return "Telefon numaranıza ait sipariş bulunmamaktadır.";
         }
 
-        let message = "📦 **Son Siparişleriniz:**\n\n";
+        let orderList = "Siparişler:\n";
         userOrders.forEach(order => {
-            message += `📌 **Sipariş No:** ${order.orderNumber}\n🔹 **Durum:** ${order.status}\n💰 **Tutar:** ${order.totalFinalPrice} ${order.currencyCode}\n\n`;
+            orderList += `Sipariş No: ${order.orderNumber}, Durum: ${order.status}, Tutar: ${order.totalFinalPrice} ${order.currencyCode}\n`;
         });
 
-        sendWhatsAppMessage(whatsappNumber, message);
+        return orderList;
     } catch (error) {
-        console.error("❌ İKAS API hata:", error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
-        sendWhatsAppMessage(whatsappNumber, "⚠️ Sipariş bilgilerinize ulaşırken hata oluştu.");
+        console.error("❌ İKAS API hata:", error.response ? error.response.data : error.message);
+        return "Sipariş bilgilerinize ulaşırken hata oluştu.";
     }
-};
+}
 
-// 🚀 İKAS API’den Access Token alma
-const getAccessToken = async () => {
-    try {
-        const response = await axios.post(`${IKAS_API_URL}/oauth/token`, 
-            `grant_type=client_credentials&client_id=${IKAS_CLIENT_ID}&client_secret=${IKAS_CLIENT_SECRET}`,
-            { headers: { "Content-Type": "application/x-www-form-urlencoded" } }
-        );
-
-        console.log("✅ Access Token Alındı:", response.data.access_token);
-        return response.data.access_token;
-    } catch (error) {
-        console.error("❌ Access Token alma hatası:", error.response ? error.response.data : error.message);
-        return null;
-    }
-};
-
-// 🚀 WhatsApp'a düz metin mesaj gönderme
-const sendWhatsAppMessage = async (to, message) => {
+// WhatsApp’a mesaj gönderme
+async function sendWhatsAppMessage(to, message) {
     const url = `https://graph.facebook.com/v17.0/${PHONE_NUMBER_ID}/messages`;
 
     const data = {
@@ -207,9 +159,9 @@ const sendWhatsAppMessage = async (to, message) => {
     } catch (error) {
         console.error("❌ WhatsApp mesaj gönderme hatası:", error.response ? error.response.data : error.message);
     }
-};
+}
 
-// 🚀 Sunucuyu başlat
+// Sunucuyu başlat
 app.listen(port, () => {
     console.log(`🚀 Sunucu ${port} portunda çalışıyor!`);
 });
