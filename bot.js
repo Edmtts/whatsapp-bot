@@ -201,8 +201,7 @@ function translateStatus(status) {
         "SHIPPED": "Kargoya Verildi",
         "DELIVERED": "Teslim Edildi",
         "CANCELLED": "İptal Edildi"
-	"REFUNDED": "İade Edildi"
-	"CREATED": "Sipariş oluşturuldu"
+	
     }[status] || status;
 }
 
