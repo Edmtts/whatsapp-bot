@@ -15,10 +15,11 @@ const IKAS_CLIENT_ID = process.env.IKAS_CLIENT_ID;
 const IKAS_CLIENT_SECRET = process.env.IKAS_CLIENT_SECRET;
 
 
+
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-// 🚀 1️⃣ Webhook Doğrulama
+// 🚀 Webhook doğrulama
 app.get("/webhook", (req, res) => {
     const mode = req.query["hub.mode"];
     const token = req.query["hub.verify_token"];
@@ -33,8 +34,45 @@ app.get("/webhook", (req, res) => {
     }
 });
 
-// 🚀 2️⃣ WhatsApp'a Butonlu Mesaj Gönderme
-const sendWhatsAppButtonMessage = async (to) => {
+// 🚀 Gelen mesajları işleme
+app.post("/webhook", async (req, res) => {
+    try {
+        const entry = req.body.entry && req.body.entry[0];
+        const change = entry && entry.changes && entry.changes[0];
+        const messageData = change && change.value && change.value.messages && change.value.messages[0];
+
+        if (messageData && messageData.from) {
+            const from = messageData.from;
+            const messageText = messageData.text ? messageData.text.body : null;
+
+            console.log(`📩 Yeni mesaj alındı: "${messageText}" (Gönderen: ${from})`);
+
+            // Butonla ilgili yanıtlar
+            if (messageData.type === "interactive" && messageData.interactive.type === "button_reply") {
+                const buttonId = messageData.interactive.button_reply.id;
+
+                if (buttonId === "siparisim") {
+                    await getOrdersByPhone(from);
+                } else if (buttonId === "siparis_durum") {
+                    sendWhatsAppMessage(from, "Sipariş durumunuzu kontrol etmek için lütfen sipariş numaranızı girin.");
+                } else if (buttonId === "iade_iptal") {
+                    sendWhatsAppMessage(from, "İade veya iptal işlemleri için lütfen talebinizi açıklayın.");
+                }
+            } else {
+                // Eğer herhangi bir buton yoksa kullanıcıya butonlu menü gönder
+                await sendWhatsAppButtonMenu(from);
+            }
+        }
+
+        res.sendStatus(200);
+    } catch (error) {
+        console.error("❌ Webhook işleme hatası:", error);
+        res.sendStatus(500);
+    }
+});
+
+// 🚀 WhatsApp'a butonlu menü gönderme
+const sendWhatsAppButtonMenu = async (to) => {
     const url = `https://graph.facebook.com/v17.0/${PHONE_NUMBER_ID}/messages`;
 
     const data = {
@@ -49,7 +87,7 @@ const sendWhatsAppButtonMessage = async (to) => {
             action: {
                 buttons: [
                     { type: "reply", reply: { id: "siparisim", title: "📦 Siparişlerim" } },
-                    { type: "reply", reply: { id: "siparisim_nerede", title: "🚚 Siparişim Nerede?" } },
+                    { type: "reply", reply: { id: "siparis_durum", title: "🚚 Siparişim Nerede?" } },
                     { type: "reply", reply: { id: "iade_iptal", title: "🔄 İade ve İptal" } }
                 ]
             }
@@ -57,76 +95,47 @@ const sendWhatsAppButtonMessage = async (to) => {
     };
 
     try {
-        await axios.post(url, data, {
+        const response = await axios.post(url, data, {
             headers: {
                 Authorization: `Bearer ${ACCESS_TOKEN}`,
                 "Content-Type": "application/json"
             }
         });
+
+        console.log("✅ Butonlu mesaj gönderildi:", response.data);
     } catch (error) {
         console.error("❌ Butonlu mesaj gönderme hatası:", error.response ? error.response.data : error.message);
     }
 };
 
-// 🚀 3️⃣ Kullanıcıdan Sipariş Numarası Talep Etme
-const requestOrderNumber = async (to) => {
-    const url = `https://graph.facebook.com/v17.0/${PHONE_NUMBER_ID}/messages`;
-
-    const data = {
-        messaging_product: "whatsapp",
-        to: to,
-        type: "text",
-        text: { body: "📌 Lütfen sipariş numaranızı giriniz (örn: ADA1016)" }
-    };
-
-    try {
-        await axios.post(url, data, {
-            headers: {
-                Authorization: `Bearer ${ACCESS_TOKEN}`,
-                "Content-Type": "application/json"
-            }
-        });
-    } catch (error) {
-        console.error("❌ Sipariş numarası isteme hatası:", error.response ? error.response.data : error.message);
-    }
-};
-
-// 🚀 4️⃣ İKAS API’den Access Token Alma
-const getAccessToken = async () => {
-    try {
-        const response = await axios.post(`${IKAS_API_URL}/oauth/token`, 
-            new URLSearchParams({
-                grant_type: "client_credentials",
-                client_id: IKAS_CLIENT_ID,
-                client_secret: IKAS_CLIENT_SECRET
-            }), 
-            { headers: { "Content-Type": "application/x-www-form-urlencoded" } }
-        );
-
-        console.log("✅ Access Token Alındı:", response.data.access_token);
-        return response.data.access_token;
-    } catch (error) {
-        console.error("❌ Token Alma Hatası:", error.response ? error.response.data : error.message);
-        return null;
-    }
-};
-
-// 🚀 5️⃣ Sipariş Numarası ile Sipariş Getirme (İKAS API)
-const getOrderById = async (whatsappNumber, orderId) => {
+// 🚀 İKAS API’den telefon numarasına göre sipariş getirme
+const getOrdersByPhone = async (whatsappNumber) => {
     const accessToken = await getAccessToken();
     if (!accessToken) {
         sendWhatsAppMessage(whatsappNumber, "⚠️ Sipariş bilgilerinize ulaşılamıyor.");
         return;
     }
 
+    // +90XXXXXXXXXX formatına dönüştürme
+    let formattedPhone = whatsappNumber.replace("+", "").replace(/\D/g, "");
+    formattedPhone = "+90" + formattedPhone;
+
+    console.log(`📞 İşlenen Telefon Numarası: ${formattedPhone}`);
+
+    // Örnek bir GraphQL sorgusu
     const query = {
         query: `
         query {
-            orderById(id: "${orderId}") {
-                id
-                status
-                totalFinalPrice
-                currencyCode
+            listOrder {
+                data {
+                    orderNumber
+                    status
+                    totalFinalPrice
+                    currencyCode
+                    customer {
+                        phone
+                    }
+                }
             }
         }`
     };
@@ -134,21 +143,23 @@ const getOrderById = async (whatsappNumber, orderId) => {
     try {
         const response = await axios.post(`${IKAS_API_URL}/graphql`, query, {
             headers: {
-                "Authorization": `Bearer ${accessToken}`,
+                Authorization: `Bearer ${accessToken}`,
                 "Content-Type": "application/json"
             }
         });
 
-        console.log(`📨 İKAS API Yanıtı: ${JSON.stringify(response.data, null, 2)}`);
+        const orders = response.data.data.listOrder.data;
+        const userOrders = orders.filter(order => order.customer && order.customer.phone && order.customer.phone.includes(formattedPhone));
 
-        if (!response.data || !response.data.data || !response.data.data.orderById) {
-            sendWhatsAppMessage(whatsappNumber, `⚠️ Sipariş numaranız (${orderId}) bulunamadı.`);
+        if (userOrders.length === 0) {
+            sendWhatsAppMessage(whatsappNumber, "📦 Telefon numaranıza ait sipariş bulunmamaktadır.");
             return;
         }
 
-        const order = response.data.data.orderById;
-        let message = `📦 **Sipariş Bilgileriniz:**\n\n`;
-        message += `📌 **Sipariş ID:** ${order.id}\n🔹 **Durum:** ${order.status}\n💰 **Tutar:** ${order.totalFinalPrice} ${order.currencyCode}`;
+        let message = "📦 **Son Siparişleriniz:**\n\n";
+        userOrders.forEach(order => {
+            message += `📌 **Sipariş No:** ${order.orderNumber}\n🔹 **Durum:** ${order.status}\n💰 **Tutar:** ${order.totalFinalPrice} ${order.currencyCode}\n\n`;
+        });
 
         sendWhatsAppMessage(whatsappNumber, message);
     } catch (error) {
@@ -157,44 +168,48 @@ const getOrderById = async (whatsappNumber, orderId) => {
     }
 };
 
-// 🚀 6️⃣ WhatsApp Gelen Mesajları İşleme
-app.post("/webhook", (req, res) => {
+// 🚀 İKAS API’den Access Token alma
+const getAccessToken = async () => {
     try {
-        if (req.body.entry) {
-            req.body.entry.forEach(entry => {
-                entry.changes.forEach(change => {
-                    if (change.field === "messages" && change.value.messages) {
-                        change.value.messages.forEach(message => {
-                            let from = message.from;
-                            let text = message.text ? message.text.body.toUpperCase() : "";
+        const response = await axios.post(`${IKAS_API_URL}/oauth/token`, 
+            `grant_type=client_credentials&client_id=${IKAS_CLIENT_ID}&client_secret=${IKAS_CLIENT_SECRET}`,
+            { headers: { "Content-Type": "application/x-www-form-urlencoded" } }
+        );
 
-                            console.log(`📩 Yeni mesaj alındı: "${text}" (Gönderen: ${from})`);
-
-                            if (message.type === "interactive" && message.interactive.type === "button_reply") {
-                                let button_id = message.interactive.button_reply.id;
-
-                                if (button_id === "siparisim") {
-                                    requestOrderNumber(from);
-                                }
-                            } else if (text.startsWith("ADA") || text.startsWith("SIP")) {
-                                getOrderById(from, text);
-                            } else {
-                                sendWhatsAppButtonMessage(from);
-                            }
-                        });
-                    }
-                });
-            });
-        }
-
-        res.sendStatus(200);
+        console.log("✅ Access Token Alındı:", response.data.access_token);
+        return response.data.access_token;
     } catch (error) {
-        console.error("❌ Webhook hata:", error);
-        res.sendStatus(500);
+        console.error("❌ Access Token alma hatası:", error.response ? error.response.data : error.message);
+        return null;
     }
-});
+};
 
-// 🚀 7️⃣ Sunucuyu Başlat
+// 🚀 WhatsApp'a düz metin mesaj gönderme
+const sendWhatsAppMessage = async (to, message) => {
+    const url = `https://graph.facebook.com/v17.0/${PHONE_NUMBER_ID}/messages`;
+
+    const data = {
+        messaging_product: "whatsapp",
+        to: to,
+        type: "text",
+        text: { body: message }
+    };
+
+    try {
+        const response = await axios.post(url, data, {
+            headers: {
+                Authorization: `Bearer ${ACCESS_TOKEN}`,
+                "Content-Type": "application/json"
+            }
+        });
+
+        console.log("✅ Mesaj gönderildi:", response.data);
+    } catch (error) {
+        console.error("❌ WhatsApp mesaj gönderme hatası:", error.response ? error.response.data : error.message);
+    }
+};
+
+// 🚀 Sunucuyu başlat
 app.listen(port, () => {
     console.log(`🚀 Sunucu ${port} portunda çalışıyor!`);
 });
