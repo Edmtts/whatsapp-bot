@@ -14,16 +14,10 @@ const IKAS_API_URL = process.env.IKAS_API_URL;
 const IKAS_CLIENT_ID = process.env.IKAS_CLIENT_ID;
 const IKAS_CLIENT_SECRET = process.env.IKAS_CLIENT_SECRET;
 
-const express = require('express');
-const bodyParser = require('body-parser');
-const axios = require('axios');
-require('dotenv').config();
-
-
-app.use(bodyParser.json({ strict: false }));
+app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-// 🚀 Webhook doğrulama
+// 🚀 1️⃣ Webhook Doğrulama
 app.get('/webhook', (req, res) => {
     const mode = req.query['hub.mode'];
     const token = req.query['hub.verify_token'];
@@ -38,7 +32,7 @@ app.get('/webhook', (req, res) => {
     }
 });
 
-// 🚀 WhatsApp gelen mesajları yakalama
+// 🚀 2️⃣ WhatsApp'tan Gelen Mesajları İşleme
 app.post('/webhook', (req, res) => {
     try {
         console.log("📩 Gelen Webhook verisi:", JSON.stringify(req.body, null, 2));
@@ -49,14 +43,11 @@ app.post('/webhook', (req, res) => {
                     if (change.field === "messages" && change.value.messages) {
                         change.value.messages.forEach(message => {
                             let from = message.from;
-                            let text = message.text ? message.text.body.toLowerCase() : "";
 
-                            console.log(`📩 Yeni mesaj alındı: "${text}" (Gönderen: ${from})`);
+                            console.log(`📩 Yeni mesaj alındı (Gönderen: ${from})`);
 
-                            // Eğer müşteri "merhaba" yazarsa, butonlu mesaj gönder
-                            if (text === "merhaba") {
-                                sendWhatsAppInteractiveMessage(from);
-                            }
+                            // Kullanıcı herhangi bir mesaj yazdıysa, butonları otomatik gönderelim
+                            sendWhatsAppInteractiveMessage(from);
                         });
                     }
                 });
@@ -70,7 +61,7 @@ app.post('/webhook', (req, res) => {
     }
 });
 
-// 🚀 WhatsApp interaktif mesaj gönderme fonksiyonu
+// 🚀 3️⃣ WhatsApp Butonlu Mesaj Gönderme
 const sendWhatsAppInteractiveMessage = async (to) => {
     const url = `https://graph.facebook.com/v17.0/${PHONE_NUMBER_ID}/messages`;
 
@@ -83,16 +74,16 @@ const sendWhatsAppInteractiveMessage = async (to) => {
             type: "button",
             header: {
                 type: "text",
-                text: "Merhaba, sizlere yardımcı olabileceğim konuyu seçermisiniz?"
+                text: "Merhaba! Size nasıl yardımcı olabilirim?"
             },
             body: {
                 text: "Lütfen bir seçenek seçin:"
             },
             action: {
                 buttons: [
-                    { type: "reply", reply: { id: "siparisim", title: "Siparişim" } },
-                    { type: "reply", reply: { id: "siparisim_nerede", title: "Siparişim nerede?" } },
-                    { type: "reply", reply: { id: "iade_iptal", title: "İade ve İptal" } }
+                    { type: "reply", reply: { id: "siparisim", title: "📦 Siparişim" } },
+                    { type: "reply", reply: { id: "siparisim_nerede", title: "🚚 Siparişim Nerede?" } },
+                    { type: "reply", reply: { id: "iade_iptal", title: "🔄 İade ve İptal" } }
                 ]
             }
         }
@@ -111,7 +102,7 @@ const sendWhatsAppInteractiveMessage = async (to) => {
     }
 };
 
-// 🚀 Sunucuyu başlat
+// 🚀 4️⃣ Sunucuyu Başlat
 app.listen(port, () => {
     console.log(`🚀 Sunucu ${port} portunda çalışıyor!`);
 });
