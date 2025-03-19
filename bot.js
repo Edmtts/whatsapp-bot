@@ -133,22 +133,7 @@ async function sendWhatsAppImage(to, imageUrl, caption) {
     }
 }
 
-// ✅ **6. İKAS API'den Access Token Alma**
-async function getAccessToken() {
-    try {
-        const response = await axios.post(IKAS_API_TOKEN_URL, 
-            `grant_type=client_credentials&client_id=${IKAS_CLIENT_ID}&client_secret=${IKAS_CLIENT_SECRET}`,
-            { headers: { "Content-Type": "application/x-www-form-urlencoded" } }
-        );
-        console.log("✅ Access Token alındı:", response.data.access_token);
-        return response.data.access_token;
-    } catch (error) {
-        console.error("❌ Access Token alma hatası:", error.response ? error.response.data : error.message);
-        return null;
-    }
-}
-
-// ✅ **7. Siparişleri Görsellerle Gönderme**
+// ✅ **6. Siparişleri Görsellerle Gönderme**
 async function sendOrdersWithImages(phone) {
     const token = await getAccessToken();
     if (!token) {
@@ -194,7 +179,7 @@ async function sendOrdersWithImages(phone) {
             let orderMessage = `🆔 **Sipariş No:** ${order.orderNumber}\n🔹 **Durum:** ${statusTR}\n💰 **Toplam Fiyat:** ${order.totalFinalPrice} ${order.currencyCode}\n`;
 
             for (const item of order.orderLineItems) {
-                let imageUrl = `https://cdn.myikas.com/${item.variant.mainImageId}`;
+                let imageUrl = `https://cdn.myikas.com/images/${item.variant.mainImageId}.jpg`; // Görsel URL düzeltilmiş
                 let imageCaption = `📌 **Ürün:** ${item.variant.name}\n🔢 **Adet:** ${item.quantity}\n💵 **Fiyat:** ${item.finalPrice} ${order.currencyCode}`;
                 
                 await sendWhatsAppImage(phone, imageUrl, imageCaption);
@@ -208,7 +193,7 @@ async function sendOrdersWithImages(phone) {
     }
 }
 
-// ✅ **8. Sipariş Durumlarını Türkçeye Çevirme**
+// ✅ **7. Sipariş Durumlarını Türkçeye Çevirme**
 function translateStatus(status) {
     return {
         "PENDING": "Beklemede",
@@ -216,6 +201,8 @@ function translateStatus(status) {
         "SHIPPED": "Kargoya Verildi",
         "DELIVERED": "Teslim Edildi",
         "CANCELLED": "İptal Edildi"
+	"REFUNDED": "İade Edildi"
+	"CREATED": "Sipariş oluşturuldu"
     }[status] || status;
 }
 
