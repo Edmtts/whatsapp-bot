@@ -133,7 +133,22 @@ async function sendWhatsAppImage(to, imageUrl, caption) {
     }
 }
 
-// ✅ **6. Siparişleri Görsellerle Gönderme**
+// ✅ **6. İKAS API'den Access Token Alma**
+async function getAccessToken() {
+    try {
+        const response = await axios.post(IKAS_API_TOKEN_URL, 
+            `grant_type=client_credentials&client_id=${IKAS_CLIENT_ID}&client_secret=${IKAS_CLIENT_SECRET}`,
+            { headers: { "Content-Type": "application/x-www-form-urlencoded" } }
+        );
+        console.log("✅ Access Token alındı:", response.data.access_token);
+        return response.data.access_token;
+    } catch (error) {
+        console.error("❌ Access Token alma hatası:", error.response ? error.response.data : error.message);
+        return null;
+    }
+}
+
+// ✅ **7. Siparişleri Görsellerle Gönderme**
 async function sendOrdersWithImages(phone) {
     const token = await getAccessToken();
     if (!token) {
@@ -141,7 +156,6 @@ async function sendOrdersWithImages(phone) {
     }
 
     const normalizedPhone = "+90" + phone.replace(/\D/g, "").slice(-10);
-    console.log(`📞 İşlenen Telefon Numarası: ${normalizedPhone}`);
 
     const query = {
         query: `
@@ -192,20 +206,6 @@ async function sendOrdersWithImages(phone) {
         console.error("❌ İKAS API hata:", error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
         return sendWhatsAppMessage(phone, "⚠️ Sipariş bilgilerinize ulaşırken hata oluştu.");
     }
-}
-
-// ✅ **7. Sipariş Durumlarını Türkçeye Çevir**
-function translateStatus(status) {
-    const statusMap = {
-        "PENDING": "Beklemede",
-        "PROCESSING": "Hazırlanıyor",
-        "SHIPPED": "Kargoya Verildi",
-        "DELIVERED": "Teslim Edildi",
-        "CANCELLED": "İptal Edildi",
-        "RETURNED": "İade Edildi",
-        "FAILED": "Başarısız"
-    };
-    return statusMap[status] || status;
 }
 
 // **Sunucuyu Başlat**
