@@ -49,8 +49,7 @@ app.post('/webhook', async (req, res) => {
             if (messageText.includes("merhaba")) {
                 await sendWhatsAppInteractiveMessage(from);
             } else if (messageText.includes("siparişlerim")) {
-                const orders = await getOrdersByPhone(from);
-                await sendWhatsAppMessage(from, orders);
+                await sendOrdersWithImages(from);
             } else {
                 await sendWhatsAppMessage(from, `Merhaba! Size nasıl yardımcı olabilirim?`);
             }
@@ -86,13 +85,9 @@ async function sendWhatsAppInteractiveMessage(to) {
     };
 
     try {
-        const response = await axios.post(url, data, {
-            headers: {
-                Authorization: `Bearer ${ACCESS_TOKEN}`,
-                "Content-Type": "application/json"
-            }
+        await axios.post(url, data, {
+            headers: { Authorization: `Bearer ${ACCESS_TOKEN}`, "Content-Type": "application/json" }
         });
-        console.log("✅ Butonlu mesaj gönderildi:", response.data);
     } catch (error) {
         console.error("❌ Butonlu mesaj gönderme hatası:", error.response ? error.response.data : error.message);
     }
@@ -110,38 +105,39 @@ async function sendWhatsAppMessage(to, message) {
     };
 
     try {
-        const response = await axios.post(url, data, {
-            headers: {
-                Authorization: `Bearer ${ACCESS_TOKEN}`,
-                "Content-Type": "application/json"
-            }
+        await axios.post(url, data, {
+            headers: { Authorization: `Bearer ${ACCESS_TOKEN}`, "Content-Type": "application/json" }
         });
-        console.log("✅ Mesaj gönderildi:", response.data);
     } catch (error) {
         console.error("❌ WhatsApp mesaj gönderme hatası:", error.response ? error.response.data : error.message);
     }
 }
 
-// ✅ **5. İKAS API'den Access Token Alma**
-async function getAccessToken() {
+// ✅ **5. WhatsApp Görsel Gönderme**
+async function sendWhatsAppImage(to, imageUrl, caption) {
+    const url = `https://graph.facebook.com/v17.0/${PHONE_NUMBER_ID}/messages`;
+
+    const data = {
+        messaging_product: "whatsapp",
+        to: to,
+        type: "image",
+        image: { link: imageUrl, caption: caption }
+    };
+
     try {
-        const response = await axios.post(IKAS_API_TOKEN_URL, 
-            `grant_type=client_credentials&client_id=${IKAS_CLIENT_ID}&client_secret=${IKAS_CLIENT_SECRET}`,
-            { headers: { "Content-Type": "application/x-www-form-urlencoded" } }
-        );
-        console.log("✅ Access Token alındı:", response.data.access_token);
-        return response.data.access_token;
+        await axios.post(url, data, {
+            headers: { Authorization: `Bearer ${ACCESS_TOKEN}`, "Content-Type": "application/json" }
+        });
     } catch (error) {
-        console.error("❌ Access Token alma hatası:", error.response ? error.response.data : error.message);
-        return null;
+        console.error("❌ WhatsApp görsel gönderme hatası:", error.response ? error.response.data : error.message);
     }
 }
 
-// ✅ **6. Telefon Numarasına Göre Siparişleri Getirme**
-async function getOrdersByPhone(phone) {
+// ✅ **6. Siparişleri Görsellerle Gönderme**
+async function sendOrdersWithImages(phone) {
     const token = await getAccessToken();
     if (!token) {
-        return "⚠️ Sipariş bilgilerinize ulaşılamıyor.";
+        return sendWhatsAppMessage(phone, "⚠️ Sipariş bilgilerinize ulaşılamıyor.");
     }
 
     const normalizedPhone = "+90" + phone.replace(/\D/g, "").slice(-10);
@@ -156,16 +152,11 @@ async function getOrdersByPhone(phone) {
                     status
                     totalFinalPrice
                     currencyCode
-                    customer {
-                        phone
-                    }
+                    customer { phone }
                     orderLineItems {
                         finalPrice
                         quantity
-                        variant {
-                            name
-                            mainImageId
-                        }
+                        variant { name mainImageId }
                     }
                 }
             }
@@ -174,35 +165,32 @@ async function getOrdersByPhone(phone) {
 
     try {
         const response = await axios.post(IKAS_API_GRAPHQL_URL, query, {
-            headers: {
-                Authorization: `Bearer ${token}`,
-                "Content-Type": "application/json"
-            }
+            headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }
         });
 
         const orders = response.data.data.listOrder.data;
         const userOrders = orders.filter(order => order.customer && order.customer.phone === normalizedPhone);
 
         if (userOrders.length === 0) {
-            return "📦 Telefon numaranıza ait sipariş bulunmamaktadır.";
+            return sendWhatsAppMessage(phone, "📦 Telefon numaranıza ait sipariş bulunmamaktadır.");
         }
 
-        let orderList = "📦 **Siparişleriniz**:\n\n";
-        userOrders.forEach(order => {
+        for (const order of userOrders) {
             let statusTR = translateStatus(order.status);
-            orderList += `🆔 **Sipariş No:** ${order.orderNumber}\n🔹 **Durum:** ${statusTR}\n💰 **Toplam Fiyat:** ${order.totalFinalPrice} ${order.currencyCode}\n`;
+            let orderMessage = `🆔 **Sipariş No:** ${order.orderNumber}\n🔹 **Durum:** ${statusTR}\n💰 **Toplam Fiyat:** ${order.totalFinalPrice} ${order.currencyCode}\n`;
 
-            order.orderLineItems.forEach(item => {
-                orderList += `📌 **Ürün:** ${item.variant.name}\n🖼️ **Görsel:** https://cdn.myikas.com/${item.variant.mainImageId}\n🔢 **Adet:** ${item.quantity}\n💵 **Birim Fiyat:** ${item.finalPrice} ${order.currencyCode}\n\n`;
-            });
+            for (const item of order.orderLineItems) {
+                let imageUrl = `https://cdn.myikas.com/${item.variant.mainImageId}`;
+                let imageCaption = `📌 **Ürün:** ${item.variant.name}\n🔢 **Adet:** ${item.quantity}\n💵 **Fiyat:** ${item.finalPrice} ${order.currencyCode}`;
+                
+                await sendWhatsAppImage(phone, imageUrl, imageCaption);
+            }
 
-            orderList += `--------------------------------\n`;
-        });
-
-        return orderList;
+            await sendWhatsAppMessage(phone, orderMessage);
+        }
     } catch (error) {
         console.error("❌ İKAS API hata:", error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
-        return "⚠️ Sipariş bilgilerinize ulaşırken hata oluştu.";
+        return sendWhatsAppMessage(phone, "⚠️ Sipariş bilgilerinize ulaşırken hata oluştu.");
     }
 }
 
