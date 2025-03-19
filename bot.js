@@ -206,6 +206,20 @@ async function getOrdersByPhone(phone) {
     }
 }
 
+// ✅ **7. Sipariş Durumlarını Türkçeye Çevir**
+function translateStatus(status) {
+    const statusMap = {
+        "PENDING": "Beklemede",
+        "PROCESSING": "Hazırlanıyor",
+        "SHIPPED": "Kargoya Verildi",
+        "DELIVERED": "Teslim Edildi",
+        "CANCELLED": "İptal Edildi",
+        "RETURNED": "İade Edildi",
+        "FAILED": "Başarısız"
+    };
+    return statusMap[status] || status;
+}
+
 // **Sunucuyu Başlat**
 app.listen(port, () => {
     console.log(`🚀 Sunucu ${port} portunda çalışıyor!`);
