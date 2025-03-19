@@ -17,6 +17,7 @@ const IKAS_API_TOKEN_URL = `https://adadunyaoptik.myikas.com/api/admin/oauth/tok
 const IKAS_API_GRAPHQL_URL = 'https://api.myikas.com/api/v1/admin/graphql';
 
 
+// Body-parser ayarları
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
@@ -48,11 +49,13 @@ app.post('/webhook', async (req, res) => {
 
             console.log(`📩 Yeni mesaj alındı: "${messageText}" (Gönderen: ${from})`);
 
-            if (messageText.includes("siparişlerim")) {
+            if (messageText.includes("merhaba")) {
+                sendWhatsAppInteractiveMessage(from);
+            } else if (messageText.includes("siparişlerim")) {
                 const orders = await getOrdersByPhone(from);
                 sendWhatsAppMessage(from, orders);
             } else {
-                sendWhatsAppMessage(from, `Aldığınız mesaj: "${messageText}"`);
+                sendWhatsAppMessage(from, `Merhaba! Size nasıl yardımcı olabilirim?`);
             }
         }
 
@@ -63,7 +66,42 @@ app.post('/webhook', async (req, res) => {
     }
 });
 
-// İKAS API'den Access Token alma
+// **WhatsApp Butonlu Mesaj Gönderme**
+async function sendWhatsAppInteractiveMessage(to) {
+    const url = `https://graph.facebook.com/v17.0/${PHONE_NUMBER_ID}/messages`;
+
+    const data = {
+        messaging_product: "whatsapp",
+        recipient_type: "individual",
+        to: to,
+        type: "interactive",
+        interactive: {
+            type: "button",
+            body: { text: "Merhaba! Size nasıl yardımcı olabilirim?" },
+            action: {
+                buttons: [
+                    { type: "reply", reply: { id: "siparisim", title: "📦 Siparişlerim" } },
+                    { type: "reply", reply: { id: "siparisim_nerede", title: "🚚 Siparişim Nerede?" } },
+                    { type: "reply", reply: { id: "iade_iptal", title: "🔄 İade ve İptal" } }
+                ]
+            }
+        }
+    };
+
+    try {
+        const response = await axios.post(url, data, {
+            headers: {
+                Authorization: `Bearer ${ACCESS_TOKEN}`,
+                "Content-Type": "application/json"
+            }
+        });
+        console.log("✅ Butonlu mesaj gönderildi:", response.data);
+    } catch (error) {
+        console.error("❌ Butonlu mesaj gönderme hatası:", error.response ? error.response.data : error.message);
+    }
+}
+
+// **İKAS API'den Access Token Alma**
 async function getAccessToken() {
     try {
         const response = await axios.post(IKAS_API_TOKEN_URL, 
@@ -78,7 +116,7 @@ async function getAccessToken() {
     }
 }
 
-// İKAS API'den telefon numarasına göre sipariş getirme
+// **İKAS API'den Telefon Numarasına Göre Sipariş Getirme**
 async function getOrdersByPhone(phone) {
     const token = await getAccessToken();
     if (!token) {
@@ -121,9 +159,9 @@ async function getOrdersByPhone(phone) {
             return "Telefon numaranıza ait sipariş bulunmamaktadır.";
         }
 
-        let orderList = "Siparişler:\n";
+        let orderList = "📦 Siparişleriniz:\n";
         userOrders.forEach(order => {
-            orderList += `Sipariş No: ${order.orderNumber}, Durum: ${order.status}, Tutar: ${order.totalFinalPrice} ${order.currencyCode}\n`;
+            orderList += `📌 Sipariş No: ${order.orderNumber}, Durum: ${order.status}, Tutar: ${order.totalFinalPrice} ${order.currencyCode}\n`;
         });
 
         return orderList;
@@ -133,7 +171,7 @@ async function getOrdersByPhone(phone) {
     }
 }
 
-// WhatsApp mesajı gönderme
+// **WhatsApp Mesajı Gönderme**
 async function sendWhatsAppMessage(to, message) {
     const url = `https://graph.facebook.com/v17.0/${PHONE_NUMBER_ID}/messages`;
 
@@ -157,7 +195,7 @@ async function sendWhatsAppMessage(to, message) {
     }
 }
 
-// Sunucuyu başlat
+// **Sunucuyu Başlat**
 app.listen(port, () => {
     console.log(`🚀 Sunucu ${port} portunda çalışıyor!`);
 });
