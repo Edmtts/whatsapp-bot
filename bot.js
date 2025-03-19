@@ -14,6 +14,22 @@ const IKAS_API_URL = process.env.IKAS_API_URL;
 const IKAS_CLIENT_ID = process.env.IKAS_CLIENT_ID;
 const IKAS_CLIENT_SECRET = process.env.IKAS_CLIENT_SECRET;
 
+const express = require('express');
+const bodyParser = require('body-parser');
+const axios = require('axios');
+require('dotenv').config();
+
+const app = express();
+const port = process.env.PORT || 10000;
+
+// 🚀 API Anahtarları
+const ACCESS_TOKEN = process.env.ACCESS_TOKEN;
+const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
+const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
+const IKAS_API_URL = process.env.IKAS_API_URL;
+const IKAS_CLIENT_ID = process.env.IKAS_CLIENT_ID;
+const IKAS_CLIENT_SECRET = process.env.IKAS_CLIENT_SECRET;
+
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
@@ -108,9 +124,35 @@ const sendWhatsAppInteractiveMessage = async (to) => {
     }
 };
 
-// 🚀 4️⃣ İKAS API’den Siparişleri Getirme
+// 🚀 4️⃣ İKAS API Token Alma Fonksiyonu
+const getToken = async () => {
+    try {
+        const response = await axios.post('https://api.myikas.com/api/v1/admin/auth/token', {
+            clientId: IKAS_CLIENT_ID,
+            clientSecret: IKAS_CLIENT_SECRET
+        }, {
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+
+        console.log("✅ Token alındı:", response.data.accessToken);
+        return response.data.accessToken; // Bearer Token döndür
+    } catch (error) {
+        console.error("❌ Token alma hatası:", error.response ? error.response.data : error.message);
+        return null;
+    }
+};
+
+// 🚀 5️⃣ İKAS API’den Siparişleri Getirme
 const getOrders = async (whatsappNumber) => {
     const url = IKAS_API_URL;
+    const token = await getToken(); // Önce API token al
+
+    if (!token) {
+        sendWhatsAppMessage(whatsappNumber, "⚠️ Sipariş bilgilerinize ulaşılamıyor.");
+        return;
+    }
 
     const query = {
         query: `
@@ -131,7 +173,7 @@ const getOrders = async (whatsappNumber) => {
 
         const response = await axios.post(url, query, {
             headers: {
-                "Authorization": `Basic ${Buffer.from(`${IKAS_CLIENT_ID}:${IKAS_CLIENT_SECRET}`).toString("base64")}`,
+                "Authorization": `Bearer ${token}`, // Bearer Token kullanıyoruz
                 "Content-Type": "application/json"
             }
         });
@@ -160,7 +202,7 @@ const getOrders = async (whatsappNumber) => {
     }
 };
 
-// 🚀 5️⃣ WhatsApp Düz Metin Mesaj Gönderme
+// 🚀 6️⃣ WhatsApp Düz Metin Mesaj Gönderme
 const sendWhatsAppMessage = async (to, message) => {
     const url = `https://graph.facebook.com/v17.0/${PHONE_NUMBER_ID}/messages`;
 
@@ -183,7 +225,7 @@ const sendWhatsAppMessage = async (to, message) => {
     }
 };
 
-// 🚀 6️⃣ Sunucuyu Başlat
+// 🚀 7️⃣ Sunucuyu Başlat
 app.listen(port, () => {
     console.log(`🚀 Sunucu ${port} portunda çalışıyor!`);
 });
