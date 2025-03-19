@@ -208,7 +208,17 @@ async function sendOrdersWithImages(phone) {
     }
 }
 
-// **Sunucuyu Başlat**
+// ✅ **8. Sipariş Durumlarını Türkçeye Çevirme**
+function translateStatus(status) {
+    return {
+        "PENDING": "Beklemede",
+        "PROCESSING": "Hazırlanıyor",
+        "SHIPPED": "Kargoya Verildi",
+        "DELIVERED": "Teslim Edildi",
+        "CANCELLED": "İptal Edildi"
+    }[status] || status;
+}
+
 app.listen(port, () => {
     console.log(`🚀 Sunucu ${port} portunda çalışıyor!`);
 });
