@@ -147,6 +147,12 @@ const getOrders = async (whatsappNumber) => {
 
         console.log(`📨 İKAS API Yanıtı: ${JSON.stringify(response.data, null, 2)}`);
 
+        if (!response.data || !response.data.data || !response.data.data.orders) {
+            console.error("❌ İKAS API’den geçerli bir sipariş yanıtı alınamadı!");
+            sendWhatsAppMessage(whatsappNumber, "⚠️ Sipariş bilgilerinize ulaşılamıyor.");
+            return;
+        }
+
         const orders = response.data.data.orders.edges;
         if (orders.length > 0) {
             let message = "📦 Son 5 siparişiniz:\n";
