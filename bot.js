@@ -114,12 +114,12 @@ const getOrders = async (whatsappNumber) => {
     const url = IKAS_API_URL;
 
     // 📌 Numara formatını düzelt (Sadece rakamları al)
-    let formattedPhone = whatsappNumber.replace("+", "").replace("90", "").replace(/\D/g, ""); 
+    let formattedPhone = whatsappNumber.replace("+", "").replace(/^90/, "").replace(/\D/g, ""); 
     console.log(`📞 İşlenen Telefon Numarası: ${formattedPhone}`);
 
     const query = {
         query: `
-        query {
+        query GetOrders {
             orders(first: 5, filter: { customerPhone: "${formattedPhone}" }) {
                 edges {
                     node {
