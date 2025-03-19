@@ -125,8 +125,9 @@ async function getOrdersByPhone(phone) {
 
     // Telefon numarasını normalize et
     const normalizedPhone = "+90" + phone.replace(/\D/g, "").slice(-10);
+    console.log(`📞 İşlenen Telefon Numarası: ${normalizedPhone}`);
 
-    // GraphQL sorgusu
+    // GraphQL sorgusu (ÜRÜN GÖRSELİ, ADI, FİYATI VE DURUMU EKLENDİ)
     const query = {
         query: `
         query {
@@ -138,6 +139,14 @@ async function getOrdersByPhone(phone) {
                     currencyCode
                     customer {
                         phone
+                    }
+                    orderLineItems {
+                        finalPrice
+                        quantity
+                        variant {
+                            name
+                            mainImageId
+                        }
                     }
                 }
             }
@@ -156,43 +165,40 @@ async function getOrdersByPhone(phone) {
         const userOrders = orders.filter(order => order.customer && order.customer.phone === normalizedPhone);
 
         if (userOrders.length === 0) {
-            return "Telefon numaranıza ait sipariş bulunmamaktadır.";
+            return "📦 Telefon numaranıza ait sipariş bulunmamaktadır.";
         }
 
-        let orderList = "📦 Siparişleriniz:\n";
+        let orderList = "📦 **Siparişleriniz**:\n\n";
         userOrders.forEach(order => {
-            orderList += `📌 Sipariş No: ${order.orderNumber}, Durum: ${order.status}, Tutar: ${order.totalFinalPrice} ${order.currencyCode}\n`;
+            let statusTR = translateStatus(order.status);
+            orderList += `🆔 **Sipariş No:** ${order.orderNumber}\n🔹 **Durum:** ${statusTR}\n💰 **Toplam Fiyat:** ${order.totalFinalPrice} ${order.currencyCode}\n`;
+
+            order.orderLineItems.forEach(item => {
+                orderList += `📌 **Ürün:** ${item.variant.name}\n🖼️ **Görsel:** https://cdn.myikas.com/${item.variant.mainImageId}\n🔢 **Adet:** ${item.quantity}\n💵 **Birim Fiyat:** ${item.finalPrice} ${order.currencyCode}\n\n`;
+            });
+
+            orderList += `--------------------------------\n`;
         });
 
         return orderList;
     } catch (error) {
-        console.error("❌ İKAS API hata:", error.response ? error.response.data : error.message);
+        console.error("❌ İKAS API hata:", error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
         return "⚠️ Sipariş bilgilerinize ulaşırken hata oluştu.";
     }
 }
 
-// **WhatsApp Mesajı Gönderme**
-async function sendWhatsAppMessage(to, message) {
-    const url = `https://graph.facebook.com/v17.0/${PHONE_NUMBER_ID}/messages`;
-
-    const data = {
-        messaging_product: "whatsapp",
-        to: to,
-        type: "text",
-        text: { body: message }
+// **Türkçe Sipariş Durumları**
+function translateStatus(status) {
+    const statusMap = {
+        "PENDING": "Beklemede",
+        "PROCESSING": "Hazırlanıyor",
+        "SHIPPED": "Kargoya Verildi",
+        "DELIVERED": "Teslim Edildi",
+        "CANCELLED": "İptal Edildi",
+        "RETURNED": "İade Edildi",
+        "FAILED": "Başarısız"
     };
-
-    try {
-        const response = await axios.post(url, data, {
-            headers: {
-                Authorization: `Bearer ${ACCESS_TOKEN}`,
-                "Content-Type": "application/json"
-            }
-        });
-        console.log("✅ Mesaj gönderildi:", response.data);
-    } catch (error) {
-        console.error("❌ WhatsApp mesaj gönderme hatası:", error.response ? error.response.data : error.message);
-    }
+    return statusMap[status] || status;
 }
 
 // **Sunucuyu Başlat**
