@@ -19,13 +19,6 @@ const bodyParser = require('body-parser');
 const axios = require('axios');
 require('dotenv').config();
 
-const app = express();
-const port = process.env.PORT || 10000;
-
-// API Anahtarları
-const ACCESS_TOKEN = process.env.ACCESS_TOKEN;
-const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
-const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
 
 app.use(bodyParser.json({ strict: false }));
 app.use(bodyParser.urlencoded({ extended: true }));
