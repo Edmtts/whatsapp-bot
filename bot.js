@@ -45,12 +45,12 @@ app.post('/webhook', (req, res) => {
                             let from = message.from;
                             console.log(`📩 Yeni mesaj alındı (Gönderen: ${from})`);
 
-                            // Eğer mesaj bir buton yanıtıysa
+                            // Butona basıldıysa
                             if (message.type === "interactive" && message.interactive.type === "button_reply") {
                                 let button_id = message.interactive.button_reply.id;
-                                
+
                                 if (button_id === "siparisim") {
-                                    getOrders(from); // İKAS API'den siparişleri çek
+                                    getOrders(from);
                                 }
                             } else {
                                 sendWhatsAppInteractiveMessage(from);
@@ -114,7 +114,7 @@ const getOrders = async (whatsappNumber) => {
     const url = IKAS_API_URL;
 
     // 📌 Numara formatını düzelt (Sadece rakamları al)
-    let formattedPhone = whatsappNumber.replace("+", "").replace("90", ""); 
+    let formattedPhone = whatsappNumber.replace("+", "").replace("90", "").replace(/\D/g, ""); 
     console.log(`📞 İşlenen Telefon Numarası: ${formattedPhone}`);
 
     const query = {
@@ -136,12 +136,16 @@ const getOrders = async (whatsappNumber) => {
     };
 
     try {
+        console.log(`📡 İKAS API’ye istek gönderiliyor: ${JSON.stringify(query, null, 2)}`);
+
         const response = await axios.post(url, query, {
             headers: {
                 "Authorization": `Basic ${Buffer.from(`${IKAS_CLIENT_ID}:${IKAS_CLIENT_SECRET}`).toString("base64")}`,
                 "Content-Type": "application/json"
             }
         });
+
+        console.log(`📨 İKAS API Yanıtı: ${JSON.stringify(response.data, null, 2)}`);
 
         const orders = response.data.data.orders.edges;
         if (orders.length > 0) {
@@ -155,7 +159,7 @@ const getOrders = async (whatsappNumber) => {
             sendWhatsAppMessage(whatsappNumber, "📦 Henüz siparişiniz bulunmamaktadır.");
         }
     } catch (error) {
-        console.error("❌ İKAS API hata:", error.response ? error.response.data : error.message);
+        console.error("❌ İKAS API hata:", error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
         sendWhatsAppMessage(whatsappNumber, "⚠️ Sipariş bilgilerinize ulaşırken hata oluştu.");
     }
 };
