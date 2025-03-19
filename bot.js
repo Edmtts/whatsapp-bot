@@ -43,7 +43,6 @@ app.post('/webhook', (req, res) => {
                     if (change.field === "messages" && change.value.messages) {
                         change.value.messages.forEach(message => {
                             let from = message.from;
-
                             console.log(`📩 Yeni mesaj alındı (Gönderen: ${from})`);
 
                             // Eğer mesaj bir buton yanıtıysa
@@ -114,10 +113,14 @@ const sendWhatsAppInteractiveMessage = async (to) => {
 const getOrders = async (whatsappNumber) => {
     const url = IKAS_API_URL;
 
+    // 📌 Numara formatını düzelt (Sadece rakamları al)
+    let formattedPhone = whatsappNumber.replace("+", "").replace("90", ""); 
+    console.log(`📞 İşlenen Telefon Numarası: ${formattedPhone}`);
+
     const query = {
         query: `
         query {
-            orders(first: 5, filter: { customerPhone: "${whatsappNumber}" }) {
+            orders(first: 5, filter: { customerPhone: "${formattedPhone}" }) {
                 edges {
                     node {
                         id
