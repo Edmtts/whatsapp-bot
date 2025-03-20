@@ -15,10 +15,12 @@ const IKAS_API_GRAPHQL_URL = 'https://api.myikas.com/api/v1/admin/graphql';
 const IKAS_CLIENT_ID = process.env.IKAS_CLIENT_ID;
 const IKAS_CLIENT_SECRET = process.env.IKAS_CLIENT_SECRET;
 
+
+// 🚀 Express Middleware
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-// ✅ **1. Webhook Doğrulama**
+// 🚀 1️⃣ Webhook Doğrulama
 app.get('/webhook', (req, res) => {
     const mode = req.query['hub.mode'];
     const token = req.query['hub.verify_token'];
@@ -33,25 +35,29 @@ app.get('/webhook', (req, res) => {
     }
 });
 
-// ✅ **2. Gelen Mesajları İşleme**
+// 🚀 2️⃣ WhatsApp'tan Gelen Mesajları İşleme
 app.post('/webhook', async (req, res) => {
     try {
-        const entry = req.body.entry && req.body.entry[0];
-        const change = entry && entry.changes && entry.changes[0];
-        const messageData = change && change.value && change.value.messages && change.value.messages[0];
+        console.log("📩 Gelen Webhook verisi:", JSON.stringify(req.body, null, 2));
 
-        if (messageData && messageData.from) {
-            const from = messageData.from;
-            const messageText = messageData.text ? messageData.text.body.toLowerCase() : "";
+        if (req.body.entry) {
+            for (let entry of req.body.entry) {
+                for (let change of entry.changes) {
+                    if (change.field === "messages" && change.value.messages) {
+                        for (let message of change.value.messages) {
+                            let from = message.from;
+                            let text = message.text ? message.text.body.toLowerCase() : "";
 
-            console.log(`📩 Yeni mesaj alındı: "${messageText}" (Gönderen: ${from})`);
+                            console.log(`📩 Yeni mesaj alındı: "${text}" (Gönderen: ${from})`);
 
-            if (messageText.includes("merhaba")) {
-                await sendWhatsAppInteractiveMessage(from);
-            } else if (messageText.includes("siparişlerim")) {
-                await sendOrdersWithImages(from);
-            } else {
-                await sendWhatsAppMessage(from, `Merhaba! Size nasıl yardımcı olabilirim?`);
+                            if (text === "siparişlerim") {
+                                await sendOrdersWithImages(from);
+                            } else {
+                                await sendWhatsAppInteractiveMessage(from);
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -62,8 +68,8 @@ app.post('/webhook', async (req, res) => {
     }
 });
 
-// ✅ **3. WhatsApp Butonlu Mesaj Gönderme**
-async function sendWhatsAppInteractiveMessage(to) {
+// 🚀 3️⃣ WhatsApp Butonlu Mesaj Gönderme
+const sendWhatsAppInteractiveMessage = async (to) => {
     const url = `https://graph.facebook.com/v17.0/${PHONE_NUMBER_ID}/messages`;
 
     const data = {
@@ -73,28 +79,112 @@ async function sendWhatsAppInteractiveMessage(to) {
         type: "interactive",
         interactive: {
             type: "button",
-            body: { text: "Merhaba! Size nasıl yardımcı olabilirim?" },
+            body: {
+                text: "Merhaba! Size nasıl yardımcı olabilirim?"
+            },
             action: {
                 buttons: [
-                    { type: "reply", reply: { id: "siparisim", title: "📦 Siparişlerim" } },
-                    { type: "reply", reply: { id: "siparisim_nerede", title: "🚚 Siparişim Nerede?" } },
-                    { type: "reply", reply: { id: "iade_iptal", title: "🔄 İade ve İptal" } }
+                    { type: "reply", reply: { id: "siparisim", title: "📦 Siparişlerim" } }
                 ]
             }
         }
     };
 
     try {
-        await axios.post(url, data, {
-            headers: { Authorization: `Bearer ${ACCESS_TOKEN}`, "Content-Type": "application/json" }
+        const response = await axios.post(url, data, {
+            headers: {
+                Authorization: `Bearer ${ACCESS_TOKEN}`,
+                'Content-Type': 'application/json'
+            }
         });
+        console.log("✅ Butonlu mesaj gönderildi:", response.data);
     } catch (error) {
         console.error("❌ Butonlu mesaj gönderme hatası:", error.response ? error.response.data : error.message);
     }
-}
+};
 
-// ✅ **4. WhatsApp Metin Mesajı Gönderme**
-async function sendWhatsAppMessage(to, message) {
+// 🚀 4️⃣ İKAS API’den Siparişleri Çekme ve Resim Gönderme
+const sendOrdersWithImages = async (whatsappNumber) => {
+    try {
+        // 📌 API'ye erişim için token al
+        const token = await getAccessToken();
+        const url = `https://api.myikas.com/api/v1/admin/graphql`;
+
+        // 🔹 Kullanıcının telefon numarasına göre siparişleri getir
+        const query = {
+            query: `query {
+                listOrder {
+                    data {
+                        id
+                        status
+                        totalFinalPrice
+                        currencyCode
+                        orderLineItems {
+                            finalPrice
+                            variant {
+                                name
+                                mainImageId
+                            }
+                        }
+                    }
+                }
+            }`
+        };
+
+        console.log(`📡 İKAS API’ye istek gönderiliyor: ${JSON.stringify(query, null, 2)}`);
+
+        const response = await axios.post(url, query, {
+            headers: {
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "application/json"
+            }
+        });
+
+        const orders = response.data.data.listOrder.data;
+        if (orders.length > 0) {
+            for (let order of orders) {
+                for (let item of order.orderLineItems) {
+                    await sendWhatsAppImage(whatsappNumber, item.variant.mainImageId);
+                    await sendWhatsAppMessage(whatsappNumber, `📦 **Sipariş ID:** ${order.id}\n🔹 **Durum:** ${order.status}\n💰 **Tutar:** ${order.totalFinalPrice} ${order.currencyCode}\n🛒 **Ürün:** ${item.variant.name}`);
+                }
+            }
+        } else {
+            await sendWhatsAppMessage(whatsappNumber, "📦 Henüz siparişiniz bulunmamaktadır.");
+        }
+    } catch (error) {
+        console.error("❌ İKAS API hata:", error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
+        await sendWhatsAppMessage(whatsappNumber, "⚠️ Sipariş bilgilerinize ulaşırken hata oluştu.");
+    }
+};
+
+// 🚀 5️⃣ WhatsApp Resimli Mesaj Gönderme
+const sendWhatsAppImage = async (to, imageUrl) => {
+    const url = `https://graph.facebook.com/v17.0/${PHONE_NUMBER_ID}/messages`;
+
+    const data = {
+        messaging_product: "whatsapp",
+        to: to,
+        type: "image",
+        image: {
+            link: imageUrl
+        }
+    };
+
+    try {
+        const response = await axios.post(url, data, {
+            headers: {
+                Authorization: `Bearer ${ACCESS_TOKEN}`,
+                'Content-Type': 'application/json'
+            }
+        });
+        console.log("✅ Resimli mesaj gönderildi:", response.data);
+    } catch (error) {
+        console.error("❌ Resimli mesaj gönderme hatası:", error.response ? error.response.data : error.message);
+    }
+};
+
+// 🚀 6️⃣ WhatsApp Düz Metin Mesaj Gönderme
+const sendWhatsAppMessage = async (to, message) => {
     const url = `https://graph.facebook.com/v17.0/${PHONE_NUMBER_ID}/messages`;
 
     const data = {
@@ -105,106 +195,38 @@ async function sendWhatsAppMessage(to, message) {
     };
 
     try {
-        await axios.post(url, data, {
-            headers: { Authorization: `Bearer ${ACCESS_TOKEN}`, "Content-Type": "application/json" }
-        });
-    } catch (error) {
-        console.error("❌ WhatsApp mesaj gönderme hatası:", error.response ? error.response.data : error.message);
-    }
-}
-
-// ✅ **5. WhatsApp Görsel Gönderme**
-async function sendWhatsAppImage(to, imageUrl, caption) {
-    const url = `https://graph.facebook.com/v17.0/${PHONE_NUMBER_ID}/messages`;
-
-    const data = {
-        messaging_product: "whatsapp",
-        to: to,
-        type: "image",
-        image: { link: imageUrl, caption: caption }
-    };
-
-    try {
-        await axios.post(url, data, {
-            headers: { Authorization: `Bearer ${ACCESS_TOKEN}`, "Content-Type": "application/json" }
-        });
-    } catch (error) {
-        console.error("❌ WhatsApp görsel gönderme hatası:", error.response ? error.response.data : error.message);
-    }
-}
-
-// ✅ **6. Siparişleri Görsellerle Gönderme**
-async function sendOrdersWithImages(phone) {
-    const token = await getAccessToken();
-    if (!token) {
-        return sendWhatsAppMessage(phone, "⚠️ Sipariş bilgilerinize ulaşılamıyor.");
-    }
-
-    const normalizedPhone = "+90" + phone.replace(/\D/g, "").slice(-10);
-
-    const query = {
-        query: `
-        query {
-            listOrder {
-                data {
-                    orderNumber
-                    status
-                    totalFinalPrice
-                    currencyCode
-                    customer { phone }
-                    orderLineItems {
-                        finalPrice
-                        quantity
-                        variant { name mainImageId }
-                    }
-                }
+        const response = await axios.post(url, data, {
+            headers: {
+                Authorization: `Bearer ${ACCESS_TOKEN}`,
+                'Content-Type': 'application/json'
             }
-        }`
-    };
+        });
+        console.log("✅ Mesaj gönderildi:", response.data);
+    } catch (error) {
+        console.error("❌ Mesaj gönderme hatası:", error.response ? error.response.data : error.message);
+    }
+};
 
+// 🚀 7️⃣ İKAS API için Access Token Alma Fonksiyonu
+const getAccessToken = async () => {
     try {
-        const response = await axios.post(IKAS_API_GRAPHQL_URL, query, {
-            headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }
+        const response = await axios.post(`https://${IKAS_STORE_NAME}.myikas.com/api/admin/oauth/token`, null, {
+            params: {
+                grant_type: 'client_credentials',
+                client_id: IKAS_CLIENT_ID,
+                client_secret: IKAS_CLIENT_SECRET
+            },
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
         });
 
-        const orders = response.data.data.listOrder.data;
-        const userOrders = orders.filter(order => order.customer && order.customer.phone === normalizedPhone);
-
-        if (userOrders.length === 0) {
-            return sendWhatsAppMessage(phone, "📦 Telefon numaranıza ait sipariş bulunmamaktadır.");
-        }
-
-        for (const order of userOrders) {
-            let statusTR = translateStatus(order.status);
-            let orderMessage = `🆔 **Sipariş No:** ${order.orderNumber}\n🔹 **Durum:** ${statusTR}\n💰 **Toplam Fiyat:** ${order.totalFinalPrice} ${order.currencyCode}\n`;
-
-            for (const item of order.orderLineItems) {
-                let imageUrl = `https://cdn.myikas.com/images/${item.variant.mainImageId}.jpg`; // Görsel URL düzeltilmiş
-                let imageCaption = `📌 **Ürün:** ${item.variant.name}\n🔢 **Adet:** ${item.quantity}\n💵 **Fiyat:** ${item.finalPrice} ${order.currencyCode}`;
-                
-                await sendWhatsAppImage(phone, imageUrl, imageCaption);
-            }
-
-            await sendWhatsAppMessage(phone, orderMessage);
-        }
+        return response.data.access_token;
     } catch (error) {
-        console.error("❌ İKAS API hata:", error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
-        return sendWhatsAppMessage(phone, "⚠️ Sipariş bilgilerinize ulaşırken hata oluştu.");
+        console.error("❌ Erişim Belirteci alma hatası:", error.response ? error.response.data : error.message);
+        throw new Error("İKAS API erişim belirteci alınamadı!");
     }
-}
+};
 
-// ✅ **7. Sipariş Durumlarını Türkçeye Çevirme**
-function translateStatus(status) {
-    return {
-        "PENDING": "Beklemede",
-        "PROCESSING": "Hazırlanıyor",
-        "SHIPPED": "Kargoya Verildi",
-        "DELIVERED": "Teslim Edildi",
-        "CANCELLED": "İptal Edildi"
-	
-    }[status] || status;
-}
-
+// 🚀 8️⃣ Sunucuyu Başlat
 app.listen(port, () => {
     console.log(`🚀 Sunucu ${port} portunda çalışıyor!`);
 });
