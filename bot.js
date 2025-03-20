@@ -22,7 +22,18 @@ app.use(bodyParser.urlencoded({ extended: true }));
 // Kullanıcı state'lerini tutan obje
 const userStates = {};
 
-// WEBHOOK GET - Doğrulama
+// Statü çeviri fonksiyonu
+function translateStatus(status) {
+  const map = {
+    "created": "Sipariş oluşturuldu",
+    "delivered": "Teslim edildi",
+    "canceled": "İptal edildi"
+    // Gerekirse diğer durumlar eklenebilir
+  };
+  return map[status] || status;
+}
+
+// WEBHOOK GET – Doğrulama
 app.get('/webhook', (req, res) => {
   const mode = req.query['hub.mode'];
   const token = req.query['hub.verify_token'];
@@ -36,7 +47,7 @@ app.get('/webhook', (req, res) => {
   }
 });
 
-// WEBHOOK POST - Mesajları İşleme
+// WEBHOOK POST – Mesajları İşleme
 app.post('/webhook', async (req, res) => {
   try {
     const entry = req.body.entry && req.body.entry[0];
@@ -44,25 +55,31 @@ app.post('/webhook', async (req, res) => {
     const messageData = change && change.value && change.value.messages && change.value.messages[0];
     if (messageData && messageData.from) {
       const from = messageData.from;
-      
       if (!userStates[from]) {
         userStates[from] = { mainMenuShown: false, awaitingOrderNumber: false, currentOrder: null };
       }
       
+      // Debug: Gelen mesaj verisini loglayın
       console.log("Gelen mesaj verisi:", JSON.stringify(messageData, null, 2));
       
-      // Button yanıtı varsa buton id'si yerine title'ı alıyoruz
+      let buttonId = "";
       let buttonTitle = "";
-      if (messageData.button_reply && messageData.button_reply.title) {
-        buttonTitle = messageData.button_reply.title.toLowerCase().trim();
+      // Eğer buton yanıtı varsa; id ve title'ı alıyoruz.
+      if (messageData.button_reply) {
+        if (messageData.button_reply.id) {
+          buttonId = messageData.button_reply.id.toLowerCase().trim();
+        }
+        if (messageData.button_reply.title) {
+          buttonTitle = messageData.button_reply.title.toLowerCase().trim();
+        }
       } else if (messageData.text && messageData.text.body) {
         buttonTitle = messageData.text.body.toLowerCase().trim();
       }
-      console.log(`📩 Alınan buton title: "${buttonTitle}" (Gönderen: ${from})`);
+      console.log(`📩 Gelen: id="${buttonId}", title="${buttonTitle}" (Gönderen: ${from})`);
 
-      // Eğer kullanıcı sipariş numarası girişi bekleniyorsa
+      // Eğer sipariş numarası girişi bekleniyorsa
       if (userStates[from].awaitingOrderNumber) {
-        const orderNumber = buttonTitle;
+        const orderNumber = buttonTitle; // Kullanıcının girdiği sipariş numarası
         const order = await getOrderByOrderNumber(orderNumber);
         if (order) {
           sendOrderInteractiveMessage(from, order);
@@ -73,75 +90,90 @@ app.post('/webhook', async (req, res) => {
         return res.sendStatus(200);
       }
       
-      // Ana menü henüz gösterilmediyse
+      // Eğer ana menü henüz gösterilmediyse
       if (!userStates[from].mainMenuShown) {
         sendWhatsAppInteractiveMessage(from);
         userStates[from].mainMenuShown = true;
         return res.sendStatus(200);
       }
       
-      // Ana menü butonlarına göre işlem
-      if (buttonTitle === "siparişlerim") {
-        const orders = await getOrdersByPhone(from);
-        if (typeof orders === 'string' || orders.length === 0) {
-          sendWhatsAppMessage(from, "Telefon numaranıza kayıtlı sipariş yok, sipariş numaranızı girerek kontrol sağlayabiliriz.");
-          userStates[from].awaitingOrderNumber = true;
-        } else {
-          orders.forEach(order => {
-            sendOrderInteractiveMessage(from, order);
-          });
+      // Öncelikle buton id üzerinden kontrol edelim (eğer varsa)
+      if (buttonId) {
+        if (buttonId === "siparislerim") {
+          const orders = await getOrdersByPhone(from);
+          if (typeof orders === 'string' || orders.length === 0) {
+            sendWhatsAppMessage(from, "Telefon numaranıza kayıtlı sipariş yok, sipariş numaranızı girerek kontrol sağlayabiliriz.");
+            userStates[from].awaitingOrderNumber = true;
+          } else {
+            orders.forEach(order => {
+              sendOrderInteractiveMessage(from, order);
+            });
+          }
+        } else if (buttonId === "siparisim_nerede") {
+          sendWhatsAppMessage(from, "Siparişinizin nerede olduğunu gösteren detaylı bilgi burada olacak.");
+        } else if (buttonId === "iade_iptal") {
+          sendWhatsAppMessage(from, "İade ve iptal işlemleriyle ilgili bilgi burada olacak.");
         }
-      } else if (buttonTitle === "siparişim nerede?") {
-        sendWhatsAppMessage(from, "Siparişinizin nerede olduğunu gösteren detaylı bilgi burada olacak.");
-      } else if (buttonTitle === "iade ve iptal") {
-        sendWhatsAppMessage(from, "İade ve iptal işlemleriyle ilgili bilgi burada olacak.");
-      }
-      // Dinamik sipariş detay menüsü butonları
-      else if (buttonTitle === "kargo takip no") {
-        const orderNumber = userStates[from].currentOrder;
-        if (orderNumber) {
-          sendTrackingInfoMessage(from, orderNumber);
-        } else {
-          sendWhatsAppMessage(from, "Lütfen önce siparişinizi seçiniz.");
-        }
-      } else if (buttonTitle === "sipariş durumu") {
-        const orderNumber = userStates[from].currentOrder;
-        if (orderNumber) {
-          sendOrderStatusMessage(from, orderNumber);
-        } else {
-          sendWhatsAppMessage(from, "Lütfen önce siparişinizi seçiniz.");
-        }
-      } else if (buttonTitle === "iade") {
-        const orderNumber = userStates[from].currentOrder;
-        if (orderNumber) {
-          sendReturnConfirmationMessage(from, orderNumber);
-        } else {
-          sendWhatsAppMessage(from, "Lütfen önce siparişinizi seçiniz.");
-        }
-      }
-      // İade onay menüsü
-      else if (buttonTitle === "onaylıyorum") {
-        const orderNumber = userStates[from].currentOrder;
-        if (orderNumber) {
-          initiateReturnRequest(from, orderNumber);
-        } else {
-          sendWhatsAppMessage(from, "Sipariş bilgisi bulunamadı.");
-        }
-      } else if (buttonTitle === "vazgeç") {
-        sendWhatsAppInteractiveMessage(from);
-      } else if (buttonTitle === "başka bir sorum var") {
-        sendCustomerServiceMessage(from);
-      }
-      // "Bu Siparişi İncele" butonu (örn: buton title "bu siparişi incele")
-      else if (buttonTitle.startsWith("bu siparişi incele")) {
-        const orderNumber = userStates[from].currentOrder;
-        if (orderNumber) {
+        else if (buttonId === "kargo_takip") {
+          const orderNumber = userStates[from].currentOrder;
+          if (orderNumber) {
+            sendTrackingInfoMessage(from, orderNumber);
+          } else {
+            sendWhatsAppMessage(from, "Lütfen önce siparişinizi seçiniz.");
+          }
+        } else if (buttonId === "siparis_durumu") {
+          const orderNumber = userStates[from].currentOrder;
+          if (orderNumber) {
+            sendOrderStatusMessage(from, orderNumber);
+          } else {
+            sendWhatsAppMessage(from, "Lütfen önce siparişinizi seçiniz.");
+          }
+        } else if (buttonId === "iade") {
+          const orderNumber = userStates[from].currentOrder;
+          if (orderNumber) {
+            sendReturnConfirmationMessage(from, orderNumber);
+          } else {
+            sendWhatsAppMessage(from, "Lütfen önce siparişinizi seçiniz.");
+          }
+        } else if (buttonId === "onayliyorum") {
+          const orderNumber = userStates[from].currentOrder;
+          if (orderNumber) {
+            initiateReturnRequest(from, orderNumber);
+          } else {
+            sendWhatsAppMessage(from, "Sipariş bilgisi bulunamadı.");
+          }
+        } else if (buttonId === "vazgec") {
+          sendWhatsAppInteractiveMessage(from);
+        } else if (buttonId === "baska bir sorum var") {
+          sendCustomerServiceMessage(from);
+        } else if (buttonId.startsWith("order_detail_")) {
+          // Buton id'si "order_detail_<orderNumber>" şeklinde geliyor.
+          const orderNumber = buttonId.replace("order_detail_", "");
+          userStates[from].currentOrder = orderNumber;
           sendOrderDetailInteractiveMenu(from, orderNumber);
         } else {
-          sendWhatsAppMessage(from, "Sipariş bilgisi bulunamadı.");
+          sendWhatsAppMessage(from, "Lütfen menüdeki butonlardan birini seçiniz.");
         }
-      } else {
-        sendWhatsAppMessage(from, "Lütfen menüdeki butonlardan birini seçiniz.");
+      }
+      // Eğer id yoksa, buton title üzerinden kontrol edelim (bu genellikle metinle yazılırsa çalışır)
+      else {
+        if (buttonTitle === "siparişlerim") {
+          const orders = await getOrdersByPhone(from);
+          if (typeof orders === 'string' || orders.length === 0) {
+            sendWhatsAppMessage(from, "Telefon numaranıza kayıtlı sipariş yok, sipariş numaranızı girerek kontrol sağlayabiliriz.");
+            userStates[from].awaitingOrderNumber = true;
+          } else {
+            orders.forEach(order => {
+              sendOrderInteractiveMessage(from, order);
+            });
+          }
+        } else if (buttonTitle === "siparişim nerede?") {
+          sendWhatsAppMessage(from, "Siparişinizin nerede olduğunu gösteren detaylı bilgi burada olacak.");
+        } else if (buttonTitle === "iade ve iptal") {
+          sendWhatsAppMessage(from, "İade ve iptal işlemleriyle ilgili bilgi burada olacak.");
+        } else {
+          sendWhatsAppMessage(from, "Lütfen menüdeki butonlardan birini seçiniz.");
+        }
       }
     }
     res.sendStatus(200);
@@ -151,7 +183,7 @@ app.post('/webhook', async (req, res) => {
   }
 });
 
-// Ana menü mesajı gönderimi
+// ANA MENÜ – Interaktif mesaj gönderimi
 async function sendWhatsAppInteractiveMessage(to) {
   const url = `https://graph.facebook.com/v17.0/${PHONE_NUMBER_ID}/messages`;
   const data = {
@@ -181,7 +213,7 @@ async function sendWhatsAppInteractiveMessage(to) {
   }
 }
 
-// IKAS API üzerinden Access Token alma
+// IKAS API – Access Token alma
 async function getAccessToken() {
   try {
     const response = await axios.post(
@@ -197,7 +229,7 @@ async function getAccessToken() {
   }
 }
 
-// Telefon numarasına göre siparişleri getiren GraphQL sorgusu
+// IKAS API – Telefon numarasına göre sipariş sorgulama (orderItems ekleniyor)
 async function getOrdersByPhone(phone) {
   const token = await getAccessToken();
   if (!token) return "⚠️ Sipariş bilgilerinize ulaşılamıyor.";
@@ -212,6 +244,11 @@ async function getOrdersByPhone(phone) {
             totalFinalPrice
             currencyCode
             createdAt
+            orderItems {
+              product {
+                name
+              }
+            }
             customer {
               phone
             }
@@ -232,7 +269,7 @@ async function getOrdersByPhone(phone) {
   }
 }
 
-// Sipariş numarasına göre siparişi getiren sorgu (tek sipariş)
+// IKAS API – Sipariş numarasına göre tek sipariş sorgulama (orderItems ekleniyor)
 async function getOrderByOrderNumber(orderNumber) {
   const token = await getAccessToken();
   if (!token) return null;
@@ -245,6 +282,11 @@ async function getOrderByOrderNumber(orderNumber) {
           totalFinalPrice
           currencyCode
           createdAt
+          orderItems {
+            product {
+              name
+            }
+          }
           customer {
             phone
           }
@@ -264,19 +306,21 @@ async function getOrderByOrderNumber(orderNumber) {
 }
 
 // Her sipariş için interaktif mesaj gönderimi (sipariş detayı)
-// Eğer resim URL'si boş ise header kısmı eklenmez.
 async function sendOrderInteractiveMessage(to, order) {
   const url = `https://graph.facebook.com/v17.0/${PHONE_NUMBER_ID}/messages`;
   const orderDate = order.createdAt ? new Date(order.createdAt).toLocaleDateString() : "Bilinmiyor";
-  const status = order.status || "Bilinmiyor";
-  const productName = "Ürün bilgisi yok"; // Varsayılan
+  const status = translateStatus(order.status || "Bilinmiyor");
+  const productName =
+    order.orderItems && order.orderItems.length > 0 && order.orderItems[0].product && order.orderItems[0].product.name
+      ? order.orderItems[0].product.name
+      : "Ürün bilgisi yok";
   const bodyText = `Sipariş No: ${order.orderNumber}\nSipariş Tarihi: ${orderDate}\nDurumu: ${status}\nÜrün: ${productName}\nFiyat: ${order.totalFinalPrice} ${order.currencyCode}`;
   
   // Seçilen sipariş numarasını state'e kaydediyoruz.
   userStates[to].currentOrder = order.orderNumber;
   
   // Eğer resim URL'si varsa header eklenir; yoksa header eklenmez.
-  const imageUrl = ""; // Eğer varsa geçerli bir URL girin, yoksa boş bırakın.
+  const imageUrl = ""; // Geçerli bir URL varsa buraya ekleyin
   const interactiveObj = {
     type: "button",
     body: { text: bodyText },
@@ -371,10 +415,10 @@ async function sendTrackingInfoMessage(to, orderNumber) {
   }
 }
 
-// Sipariş durumu: "kargoda" bilgisi ve takip butonu
+// Sipariş durumu: "kargoda" bilgisi ve takip butonu.
 async function sendOrderStatusMessage(to, orderNumber) {
   const trackingInfo = await getTrackingInfo(orderNumber);
-  const baseMessage = `Sipariş ${orderNumber} nolu ürün "kargoda" görünmektedir.\nKargo firması: ${trackingInfo.carrierName}, takip no: ${trackingInfo.trackingCode}`;
+  const baseMessage = `Sipariş ${orderNumber} nolu ürün "${translateStatus(trackingInfo.status)}" görünmektedir.\nKargo firması: ${trackingInfo.carrierName}, takip no: ${trackingInfo.trackingCode}`;
   if (trackingInfo.delivered && trackingInfo.trackingUrl) {
     const url = `https://graph.facebook.com/v17.0/${PHONE_NUMBER_ID}/messages`;
     const data = {
@@ -405,13 +449,13 @@ async function sendOrderStatusMessage(to, orderNumber) {
   }
 }
 
-// İade: Sipariş "teslim edildi" ise onay mesajı gönder, aksi halde uyarı göster.
+// İade: Sipariş "teslim edildi" ise onay mesajı gönder, aksi halde uyarı.
 async function sendReturnConfirmationMessage(to, orderNumber) {
   const orderDetails = await getTrackingInfo(orderNumber);
-  if (orderDetails.status !== "teslim edildi") {
+  if (orderDetails.status !== "delivered") {
     sendWhatsAppMessage(
       to,
-      `Not: Sipariş ${orderNumber} nolu ürün "${orderDetails.status}" aşamasında olduğu için iade başlatılamaz. Teslim edildikten 14 gün içerisinde iade talebinde bulunabilirsiniz.`
+      `Not: Sipariş ${orderNumber} nolu ürün "${translateStatus(orderDetails.status)}" aşamasında olduğu için iade başlatılamaz. Teslim edildikten 14 gün içerisinde iade talebinde bulunabilirsiniz.`
     );
     return;
   }
@@ -426,8 +470,8 @@ async function sendReturnConfirmationMessage(to, orderNumber) {
       body: { text: `Sipariş ${orderNumber} nolu ürün için iade talebi oluşturduğunu onaylıyor musun?` },
       action: {
         buttons: [
-          { type: "reply", reply: { id: "onaylıyorum", title: "Onaylıyorum" } },
-          { type: "reply", reply: { id: "vazgeç", title: "Vazgeç" } },
+          { type: "reply", reply: { id: "onayliyorum", title: "Onaylıyorum" } },
+          { type: "reply", reply: { id: "vazgec", title: "Vazgeç" } },
           { type: "reply", reply: { id: "baska bir sorum var", title: "Başka bir sorum var" } }
         ]
       }
@@ -473,14 +517,15 @@ async function sendWhatsAppMessage(to, message) {
   }
 }
 
-// Simülasyon: Kargo takip bilgilerini döndürüyor
+// Simülasyon: Kargo takip bilgilerini döndüren fonksiyon
 async function getTrackingInfo(orderNumber) {
+  // Burada gerçek API'den gelen statü "delivered" vs. yerine örnek değerler döndürüyoruz.
   return {
     trackingCode: "ABC123",
     trackingUrl: "https://tracking.example.com/ABC123",
     delivered: true,
     carrierName: "XYZ Kargo",
-    status: "teslim edildi" // veya "kargoda", "sipariş oluşturuldu", vb.
+    status: "delivered" // API'den gelen değer, çeviri fonksiyonuyla Türkçeye çevrilecek.
   };
 }
 
