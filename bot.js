@@ -103,37 +103,22 @@ app.post('/webhook', async (req, res) => {
     }
 });
 
-// **Ana Menü Gönder**
-async function sendMainMenu(to) {
-    const url = `https://graph.facebook.com/v17.0/${PHONE_NUMBER_ID}/messages`;
-    const data = {
-        messaging_product: "whatsapp",
-        recipient_type: "individual",
-        to: to,
-        type: "interactive",
-        interactive: {
-            type: "button",
-            body: { text: "📌 Merhaba! Size nasıl yardımcı olabilirim?" },
-            action: {
-                buttons: [
-                    { type: "reply", reply: { id: "siparislerim", title: "📦 Siparişlerim" } },
-                    { type: "reply", reply: { id: "iade", title: "🔄 İade Talebi" } }
-                ]
-            }
-        }
-    };
-
+// **İKAS API - Access Token AL (HATA ÇÖZÜLDÜ!)**
+async function getAccessToken() {
     try {
-        const response = await axios.post(url, data, {
-            headers: { Authorization: `Bearer ${ACCESS_TOKEN}`, "Content-Type": "application/json" }
-        });
-        console.log("✅ Ana Menü Gönderildi:", response.data);
+        const response = await axios.post(
+            IKAS_API_TOKEN_URL,
+            `grant_type=client_credentials&client_id=${IKAS_CLIENT_ID}&client_secret=${IKAS_CLIENT_SECRET}`,
+            { headers: { "Content-Type": "application/x-www-form-urlencoded" } }
+        );
+        return response.data.access_token;
     } catch (error) {
-        console.error("❌ Ana Menü Gönderme Hatası:", error.response ? error.response.data : error.message);
+        console.error("❌ Access Token alma hatası:", error.response ? error.response.data : error.message);
+        return null;
     }
 }
 
-// **Siparişleri Telefon Numarasına Göre Çek**
+// **İKAS API - Siparişleri Telefon Numarasına Göre Çek**
 async function getOrdersByPhone(phone) {
     const token = await getAccessToken();
     if (!token) return null;
@@ -178,6 +163,29 @@ async function getOrdersByPhone(phone) {
 async function sendWhatsAppMessage(to, message) {
     const url = `https://graph.facebook.com/v17.0/${PHONE_NUMBER_ID}/messages`;
     const data = { messaging_product: "whatsapp", to, type: "text", text: { body: message } };
+
+    await axios.post(url, data, { headers: { Authorization: `Bearer ${ACCESS_TOKEN}`, "Content-Type": "application/json" } });
+}
+
+// **Ana Menü Gönder**
+async function sendMainMenu(to) {
+    const url = `https://graph.facebook.com/v17.0/${PHONE_NUMBER_ID}/messages`;
+    const data = {
+        messaging_product: "whatsapp",
+        recipient_type: "individual",
+        to: to,
+        type: "interactive",
+        interactive: {
+            type: "button",
+            body: { text: "📌 Merhaba! Size nasıl yardımcı olabilirim?" },
+            action: {
+                buttons: [
+                    { type: "reply", reply: { id: "siparislerim", title: "📦 Siparişlerim" } },
+                    { type: "reply", reply: { id: "iade", title: "🔄 İade Talebi" } }
+                ]
+            }
+        }
+    };
 
     await axios.post(url, data, { headers: { Authorization: `Bearer ${ACCESS_TOKEN}`, "Content-Type": "application/json" } });
 }
