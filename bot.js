@@ -10,10 +10,10 @@ const port = process.env.PORT || 10000;
 const ACCESS_TOKEN = process.env.ACCESS_TOKEN;
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
-const IKAS_API_TOKEN_URL = `https://adadunyaoptik.myikas.com/api/admin/oauth/token`;
-const IKAS_API_GRAPHQL_URL = 'https://api.myikas.com/api/v1/admin/graphql';
+const IKAS_API_TOKEN_URL = process.env.IKAS_API_TOKEN_URL;
+const IKAS_API_GRAPHQL_URL = process.env.IKAS_API_GRAPHQL_URL;
 const IKAS_CLIENT_ID = process.env.IKAS_CLIENT_ID;
-const IKAS_CLIENT_SECRET = process.env.IKAS_CLIENT_SECRET';
+const IKAS_CLIENT_SECRET = process.env.IKAS_CLIENT_SECRET;
 
 // Body-parser
 app.use(bodyParser.json());
