@@ -46,21 +46,22 @@ app.post('/webhook', async (req, res) => {
 
     if (messageData && messageData.from) {
       const from = messageData.from;
-
+      
       // Her kullanıcı için state oluşturuluyor
       if (!userStates[from]) {
         userStates[from] = { mainMenuShown: false, awaitingOrderNumber: false, currentOrder: null };
       }
-
-      // Gelen mesajın tamamını loglayalım (debug amaçlı)
+      
+      // Gelen mesajın tamamını loglayalım
       console.log("Gelen mesaj verisi:", JSON.stringify(messageData, null, 2));
-
+      
       let messageId = "";
       if (messageData.button_reply && messageData.button_reply.id) {
         messageId = messageData.button_reply.id.toLowerCase().trim();
       } else if (messageData.text && messageData.text.body) {
         messageId = messageData.text.body.toLowerCase().trim();
       }
+      
       console.log(`📩 Alınan mesaj id: "${messageId}" (Gönderen: ${from})`);
 
       // Eğer sipariş numarası bekleniyorsa
@@ -82,9 +83,9 @@ app.post('/webhook', async (req, res) => {
         userStates[from].mainMenuShown = true;
         return res.sendStatus(200);
       }
-
+      
       // Buton id'lerine göre yönlendirme
-      if (messageId === "siparisim") {
+      if (messageId === "siparislerim") {
         const orders = await getOrdersByPhone(from);
         if (typeof orders === 'string' || orders.length === 0) {
           sendWhatsAppMessage(from, "Telefon numaranıza kayıtlı sipariş yok, sipariş numaranızı girerek kontrol sağlayabiliriz.");
@@ -99,7 +100,7 @@ app.post('/webhook', async (req, res) => {
       } else if (messageId === "iade_iptal") {
         sendWhatsAppMessage(from, "İade ve iptal işlemleriyle ilgili bilgi burada olacak.");
       }
-      // Dinamik sipariş detay menüsü: buton id’leri "kargo_takip", "siparis_durumu", "iade"
+      // Dinamik sipariş detay menüsü: "kargo_takip", "siparis_durumu", "iade"
       else if (messageId === "kargo_takip") {
         const orderNumber = userStates[from].currentOrder;
         if (orderNumber) {
@@ -154,6 +155,7 @@ app.post('/webhook', async (req, res) => {
 // Ana Menü: Butonlu mesaj gönderimi
 async function sendWhatsAppInteractiveMessage(to) {
   const url = `https://graph.facebook.com/v17.0/${PHONE_NUMBER_ID}/messages`;
+  // Buton id'sini "siparislerim" olarak belirledik (küçük harf, Türkçe karakter içermiyor)
   const data = {
     messaging_product: "whatsapp",
     recipient_type: "individual",
@@ -164,7 +166,7 @@ async function sendWhatsAppInteractiveMessage(to) {
       body: { text: "Merhaba! Size nasıl yardımcı olabilirim?" },
       action: {
         buttons: [
-          { type: "reply", reply: { id: "siparisim", title: "Siparişlerim" } },
+          { type: "reply", reply: { id: "siparislerim", title: "Siparişlerim" } },
           { type: "reply", reply: { id: "siparisim_nerede", title: "Siparişim Nerede?" } },
           { type: "reply", reply: { id: "iade_iptal", title: "İade ve İptal" } }
         ]
@@ -268,7 +270,7 @@ async function sendOrderInteractiveMessage(to, order) {
   const url = `https://graph.facebook.com/v17.0/${PHONE_NUMBER_ID}/messages`;
   const orderDate = order.createdAt ? new Date(order.createdAt).toLocaleDateString() : "Bilinmiyor";
   const status = order.status || "Bilinmiyor";
-  // IKAS sorgusunda ürün bilgisi olmadığından varsayılan değer kullanıyoruz.
+  // Ürün bilgisi IKAS sorgusunda olmadığından varsayılan değer kullanıyoruz.
   const productName = "Ürün bilgisi yok";
   const bodyText = `Sipariş No: ${order.orderNumber}\nSipariş Tarihi: ${orderDate}\nDurumu: ${status}\nÜrün: ${productName}\nFiyat: ${order.totalFinalPrice} ${order.currencyCode}`;
   
@@ -282,7 +284,7 @@ async function sendOrderInteractiveMessage(to, order) {
     type: "interactive",
     interactive: {
       type: "button",
-      header: { type: "image", image: { link: "" } }, // Görsel yoksa boş bırakabilirsiniz
+      header: { type: "image", image: { link: "" } },
       body: { text: bodyText },
       action: {
         buttons: [
