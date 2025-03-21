@@ -41,19 +41,19 @@ app.post('/webhook', async (req, res) => {
 
         if (messageData && messageData.from) {
             const from = messageData.from;
-            const messageReplyId = messageData.message && messageData.message.reply && messageData.message.reply.id;
+            const messageText = messageData.text ? messageData.text.body.toLowerCase() : "";
 
-            console.log(`📩 Yeni mesaj alındı: (Gönderen: ${from})`);
+            console.log(`📩 Yeni mesaj alındı: "${messageText}" (Gönderen: ${from})`);
 
-            if (messageReplyId === "siparislerim") {
+            if (messageText.includes("merhaba") || messageText.includes("menu")) {
+                // Butonlu mesajı göndermek için bu fonksiyonu çağırır
+                await sendWhatsAppInteractiveMessage(from);
+            } else if (messageText.includes("siparişlerim")) {
                 const orders = await getOrdersByPhone(from);
                 await sendWhatsAppMessage(from, orders);
-            } else if (messageReplyId === "siparisim_nerede") {
-                // Sipariş durumu sorgulama fonksiyonunu çağır
-            } else if (messageReplyId === "iade_iptal") {
-                // İade ve iptal işlemleri için fonksiyonu çağır
             } else {
-                await sendWhatsAppMessage(from, `Merhaba! Size nasıl yardımcı olabilirim?`);
+                // Varsayılan mesajı gönder
+                await sendWhatsAppMessage(from, `Merhaba! Size nasıl yardımcı olabilirim? Komutlar için 'menu' yazınız.`);
             }
         }
 
