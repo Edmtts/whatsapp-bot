@@ -397,4 +397,3 @@ function formatTimestamp(timestamp) {
 app.listen(port, () => {
     console.log(`🚀 Sunucu ${port} portunda çalışıyor!`);
 });
-*
