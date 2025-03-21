@@ -47,7 +47,7 @@ app.post('/webhook', async (req, res) => {
 
             console.log(`📩 Yeni mesaj alındı: "${messageText}" (Gönderen: ${from})`);
 
-            if (buttonId === "siparislerim" || messageText.includes("Siparişlerim")) {
+            if (buttonId === "siparislerim" || messageText.includes("siparişlerim")) {
                 const orders = await getOrdersByPhone(from);
                 if (orders.includes("Telefon numaranıza ait sipariş bulunmamaktadır")) {
                     await sendWhatsAppMessage(from, orders); // Sipariş numarası iste
@@ -202,10 +202,10 @@ async function getOrdersByPhone(phone) {
         let orderList = "📦 **Siparişleriniz**:\n\n";
         userOrders.forEach(order => {
             let statusTR = translateStatus(order.status);
-            orderList += `🆔 **Sipariş No:** ${order.orderNumber}\n🔹 **Durum:** ${statusTR}\n💰 **Toplam Fiyat:** ${order.totalFinalPrice} ${order.currencyCode}\n`;
+            orderList += ` Sipariş No: ${order.orderNumber}\n Durum: ${statusTR}\n💰 Toplam Fiyat: ${order.totalFinalPrice} ${order.currencyCode}\n`;
 
             order.orderLineItems.forEach(item => {
-                orderList += `📌 **Ürün:** ${item.variant.name}\n🖼️ **Görsel:** https://cdn.myikas.com/${item.variant.mainImageId}\n🔢 **Adet:** ${item.quantity}\n💵 **Birim Fiyat:** ${item.finalPrice} ${order.currencyCode}\n\n`;
+                orderList += ` Ürün: ${item.variant.name}\n Görsel: https://cdn.myikas.com/${item.variant.mainImageId}\n Adet: ${item.quantity}\n Birim Fiyat: ${item.finalPrice} ${order.currencyCode}\n\n`;
             });
 
             orderList += `--------------------------------\n`;
@@ -265,10 +265,10 @@ async function getOrderByOrderNumber(orderNumber) {
             return "⚠️ Sipariş numarasına ait sipariş bulunamadı.";
         }
 
-        let orderDetails = `🆔 **Sipariş No:** ${order.orderNumber}\n🔹 **Durum:** ${translateStatus(order.status)}\n💰 **Toplam Fiyat:** ${order.totalFinalPrice} ${order.currencyCode}\n`;
+        let orderDetails = `🆔 Sipariş No: ${order.orderNumber}\n Durum: ${translateStatus(order.status)}\n Toplam Fiyat: ${order.totalFinalPrice} ${order.currencyCode}\n`;
 
         order.orderLineItems.forEach(item => {
-            orderDetails += `📌 **Ürün:** ${item.variant.name}\n🖼️ **Görsel:** https://cdn.myikas.com/${item.variant.mainImageId}\n🔢 **Adet:** ${item.quantity}\n💵 **Birim Fiyat:** ${item.finalPrice} ${order.currencyCode}\n\n`;
+            orderDetails += `Ürün: ${item.variant.name}\n Görsel: https://cdn.myikas.com/${item.variant.mainImageId}\n Adet: ${item.quantity}\n Birim Fiyat: ${item.finalPrice} ${order.currencyCode}\n\n`;
         });
 
         return orderDetails;
