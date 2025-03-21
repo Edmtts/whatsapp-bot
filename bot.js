@@ -47,7 +47,7 @@ app.post('/webhook', async (req, res) => {
 
             console.log(`📩 Yeni mesaj alındı: "${messageText}" (Gönderen: ${from})`);
 
-            if (buttonId === "Siparişlerim" || messageText.includes("Siparişlerim")) {
+            if (buttonId === "siparislerim" || messageText.includes("Siparişlerim")) {
                 const orders = await getOrdersByPhone(from);
                 if (orders.includes("Telefon numaranıza ait sipariş bulunmamaktadır")) {
                     await sendWhatsAppMessage(from, orders); // Sipariş numarası iste
