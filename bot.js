@@ -18,7 +18,7 @@ const IKAS_CLIENT_SECRET = process.env.IKAS_CLIENT_SECRET;
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-// ✅ **1. Webhook Doğrulama**
+// ✅ 1. Webhook Doğrulama
 app.get('/webhook', (req, res) => {
     const mode = req.query['hub.mode'];
     const token = req.query['hub.verify_token'];
@@ -33,7 +33,7 @@ app.get('/webhook', (req, res) => {
     }
 });
 
-// ✅ **2. Gelen Mesajları İşleme**
+// ✅ 2. Gelen Mesajları İşleme
 app.post('/webhook', async (req, res) => {
     try {
         const entry = req.body.entry && req.body.entry[0];
@@ -43,27 +43,32 @@ app.post('/webhook', async (req, res) => {
         if (messageData && messageData.from) {
             const from = messageData.from;
             const messageText = messageData.text ? messageData.text.body.toLowerCase() : "";
-            const buttonId = messageData.button && messageData.button.payload;
+            // Buton tıklamalarında gelen veride hem button hem de button_reply kontrolü yapılıyor
+            const buttonId = messageData.button
+                ? messageData.button.payload
+                : messageData.button_reply
+                ? messageData.button_reply.id
+                : null;
 
             console.log(`📩 Yeni mesaj alındı: "${messageText}" (Gönderen: ${from})`);
 
             if (buttonId === "siparislerim" || messageText.includes("siparişlerim")) {
                 const orders = await getOrdersByPhone(from);
-                if (orders.includes("Telefon numaranıza ait sipariş bulunmamaktadır")) {
-                    await sendWhatsAppMessage(from, orders); // Sipariş numarası iste
+                if (typeof orders === "string" && orders.includes("Telefon numaranıza ait sipariş bulunmamaktadır")) {
+                    await sendWhatsAppMessage(from, orders);
                 } else {
-                    await sendOrderList(from, orders); // Sipariş listesini gönder
+                    await sendOrderList(from, orders);
                 }
             } else if (buttonId && buttonId.startsWith("siparis_detay_")) {
                 const orderNumber = buttonId.replace("siparis_detay_", "");
                 const orderDetails = await getOrderDetails(orderNumber);
-                await sendWhatsAppMessage(from, orderDetails); // Sipariş detaylarını gönder
+                await sendWhatsAppMessage(from, orderDetails);
             } else if (buttonId && buttonId.startsWith("kargo_takip_")) {
                 const orderNumber = buttonId.replace("kargo_takip_", "");
                 const trackingUrl = await getTrackingUrl(orderNumber);
                 await sendWhatsAppMessage(from, `Kargo takip linkiniz: ${trackingUrl}`);
             } else if (messageText.includes("merhaba")) {
-                await sendWhatsAppInteractiveMessage(from); // Butonlu mesaj gönder
+                await sendWhatsAppInteractiveMessage(from);
             } else {
                 await sendWhatsAppMessage(from, `Merhaba! Size nasıl yardımcı olabilirim?`);
             }
@@ -76,7 +81,7 @@ app.post('/webhook', async (req, res) => {
     }
 });
 
-// ✅ **3. WhatsApp Butonlu Mesaj Gönderme**
+// ✅ 3. WhatsApp Butonlu Mesaj Gönderme
 async function sendWhatsAppInteractiveMessage(to) {
     const url = `https://graph.facebook.com/v17.0/${PHONE_NUMBER_ID}/messages`;
 
@@ -111,7 +116,7 @@ async function sendWhatsAppInteractiveMessage(to) {
     }
 }
 
-// ✅ **4. WhatsApp Metin Mesajı Gönderme**
+// ✅ 4. WhatsApp Metin Mesajı Gönderme
 async function sendWhatsAppMessage(to, message) {
     const url = `https://graph.facebook.com/v17.0/${PHONE_NUMBER_ID}/messages`;
 
@@ -135,7 +140,7 @@ async function sendWhatsAppMessage(to, message) {
     }
 }
 
-// ✅ **5. İKAS API'den Access Token Alma**
+// ✅ 5. İKAS API'den Access Token Alma
 async function getAccessToken() {
     try {
         const response = await axios.post(IKAS_API_TOKEN_URL, 
@@ -150,7 +155,7 @@ async function getAccessToken() {
     }
 }
 
-// ✅ **6. Telefon Numarasına Göre Siparişleri Getirme**
+// ✅ 6. Telefon Numarasına Göre Siparişleri Getirme
 async function getOrdersByPhone(phone) {
     const token = await getAccessToken();
     if (!token) {
@@ -208,7 +213,7 @@ async function getOrdersByPhone(phone) {
     }
 }
 
-// ✅ **7. Sipariş Listesi Gönderme (Her Sipariş Ayrı Ayrı)**
+// ✅ 7. Sipariş Listesi Gönderme (Her Sipariş Ayrı Ayrı)
 async function sendOrderList(to, orders) {
     for (const order of orders) {
         const orderMessage = `🆔 **Sipariş No:** ${order.orderNumber}\n` +
@@ -246,7 +251,7 @@ async function sendOrderList(to, orders) {
     }
 }
 
-// ✅ **8. Sipariş Detaylarını Getirme**
+// ✅ 8. Sipariş Detaylarını Getirme
 async function getOrderDetails(orderNumber) {
     const token = await getAccessToken();
     if (!token) {
@@ -322,7 +327,7 @@ async function getOrderDetails(orderNumber) {
     }
 }
 
-// ✅ **9. Kargo Takip URL'sini Getirme**
+// ✅ 9. Kargo Takip URL'sini Getirme
 async function getTrackingUrl(orderNumber) {
     const token = await getAccessToken();
     if (!token) {
@@ -365,7 +370,7 @@ async function getTrackingUrl(orderNumber) {
     }
 }
 
-// ✅ **10. Sipariş Durumlarını Türkçeye Çevir**
+// ✅ 10. Sipariş Durumlarını Türkçeye Çevir
 function translateStatus(status) {
     const statusMap = {
         "PENDING": "Beklemede",
@@ -379,7 +384,7 @@ function translateStatus(status) {
     return statusMap[status] || status;
 }
 
-// ✅ **11. Timestamp'i Tarih Formatına Çevir**
+// ✅ 11. Timestamp'i Tarih Formatına Çevir
 function formatTimestamp(timestamp) {
     if (!timestamp) return "Bilinmiyor";
     const date = new Date(Number(timestamp));
