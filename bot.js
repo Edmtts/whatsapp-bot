@@ -50,33 +50,20 @@ app.post('/webhook', async (req, res) => {
   }
 
   if (msgText === "siparişlerim") {
+    // Bu durumda hemen siparişleri göstermek yerine buton tetiklenecek
+    await sendMessage(from, "Lütfen aşağıdaki butona tıklayarak siparişlerinizi görün.");
+  }
+
+  // Eğer "Siparişlerim" butonuna tıklandıysa
+  if (message?.interactive?.button_reply?.id === "siparişlerim") {
     const orders = await getOrdersByPhone(from);
     if (!orders || orders.length === 0) {
-      await sendMessage(from, "Kayıtlı sipariş bulunamadı. Sipariş numarasını manuel giriniz:");
-      userStates[from].awaitingOrderNumber = true;
+      await sendMessage(from, "Kayıtlı sipariş bulunamadı.");
     } else {
       for (const order of orders) {
         await sendOrderDetails(from, order);
       }
     }
-  } else if (msgText.startsWith("sipariş detayları")) {
-    const orderNumber = msgText.split(" ")[2]; // Sipariş numarası detaylarını al
-    const order = await getOrderByNumber(orderNumber);
-    if (order) {
-      await sendMessage(from, `📦 Sipariş No: ${order.orderNumber}\nDurum: ${order.status}`);
-    } else {
-      await sendMessage(from, "Sipariş bulunamadı, lütfen doğru numara giriniz.");
-    }
-  } else if (userStates[from].awaitingOrderNumber) {
-    const order = await getOrderByNumber(msgText);
-    if (order) {
-      await sendMessage(from, `📦 Sipariş No: ${order.orderNumber}\nDurum: ${order.status}`);
-    } else {
-      await sendMessage(from, "Sipariş bulunamadı, lütfen doğru numara giriniz.");
-    }
-    userStates[from].awaitingOrderNumber = false;
-  } else {
-    await sendMessage(from, "Lütfen menüdeki seçeneklerden birini yazın: 'siparişlerim'");
   }
 
   res.sendStatus(200);
