@@ -167,6 +167,7 @@ async function getOrdersByPhone(phone) {
                 data {
                     orderNumber
                     status
+                    createdAt
                     totalFinalPrice
                     currencyCode
                     customer {
@@ -212,7 +213,7 @@ async function sendOrderList(to, orders) {
     for (const order of orders) {
         const orderMessage = `🆔 **Sipariş No:** ${order.orderNumber}\n` +
                             `🔹 **Durum:** ${translateStatus(order.status)}\n` +
-                            `📅 **Sipariş Tarihi:** ${order.createdAt}\n\n` +
+                            `📅 **Sipariş Tarihi:** ${order.createdAt || "Bilinmiyor"}\n\n` +
                             `🔍 Detayları görmek için butona basın:`;
 
         const data = {
@@ -298,7 +299,7 @@ async function getOrderDetails(orderNumber) {
 
         let orderDetails = `🆔 **Sipariş No:** ${order.orderNumber}\n`;
         orderDetails += `🔹 **Durum:** ${translateStatus(order.status)}\n`;
-        orderDetails += `📅 **Sipariş Tarihi:** ${order.createdAt}\n`;
+        orderDetails += `📅 **Sipariş Tarihi:** ${order.createdAt || "Bilinmiyor"}\n`;
         orderDetails += `💰 **Toplam Fiyat:** ${order.totalFinalPrice} ${order.currencyCode}\n\n`;
         orderDetails += `📦 **Ürünler**:\n`;
 
