@@ -207,18 +207,42 @@ async function getOrdersByPhone(phone) {
     }
 }
 
-// ✅ **7. Sipariş Listesi Gönderme (Her Siparişin Altında Buton)**
+// ✅ **7. Sipariş Listesi Gönderme (Her Sipariş Ayrı Ayrı)**
 async function sendOrderList(to, orders) {
-    let orderListMessage = "📦 **Siparişleriniz**:\n\n";
-    orders.forEach((order) => {
-        orderListMessage += `🆔 **Sipariş No:** ${order.orderNumber}\n`;
-        orderListMessage += `🔹 **Durum:** ${translateStatus(order.status)}\n`;
-        orderListMessage += `📅 **Sipariş Tarihi:** ${order.createdAt}\n\n`;
-        orderListMessage += `🔍 Detayları görmek için butona basın:\n`;
-        orderListMessage += `👉 [Sipariş Detayları](#siparis_detay_${order.orderNumber})\n\n`;
-    });
+    for (const order of orders) {
+        const orderMessage = `🆔 **Sipariş No:** ${order.orderNumber}\n` +
+                            `🔹 **Durum:** ${translateStatus(order.status)}\n` +
+                            `📅 **Sipariş Tarihi:** ${order.createdAt}\n\n` +
+                            `🔍 Detayları görmek için butona basın:`;
 
-    await sendWhatsAppMessage(to, orderListMessage);
+        const data = {
+            messaging_product: "whatsapp",
+            recipient_type: "individual",
+            to: to,
+            type: "interactive",
+            interactive: {
+                type: "button",
+                body: { text: orderMessage },
+                action: {
+                    buttons: [
+                        { type: "reply", reply: { id: `siparis_detay_${order.orderNumber}`, title: "📋 Sipariş Detayları" } }
+                    ]
+                }
+            }
+        };
+
+        try {
+            const response = await axios.post(`https://graph.facebook.com/v17.0/${PHONE_NUMBER_ID}/messages`, data, {
+                headers: {
+                    Authorization: `Bearer ${ACCESS_TOKEN}`,
+                    "Content-Type": "application/json"
+                }
+            });
+            console.log("✅ Sipariş mesajı gönderildi:", response.data);
+        } catch (error) {
+            console.error("❌ Sipariş mesajı gönderme hatası:", error.response ? error.response.data : error.message);
+        }
+    }
 }
 
 // ✅ **8. Sipariş Detaylarını Getirme**
