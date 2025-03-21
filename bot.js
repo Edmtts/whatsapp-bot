@@ -43,14 +43,26 @@ app.post('/webhook', async (req, res) => {
         if (messageData && messageData.from) {
             const from = messageData.from;
             const messageText = messageData.text ? messageData.text.body.toLowerCase() : "";
+            const buttonId = messageData.button && messageData.button.payload;
 
             console.log(`📩 Yeni mesaj alındı: "${messageText}" (Gönderen: ${from})`);
 
-            if (messageText.includes("merhaba")) {
-                await sendWhatsAppInteractiveMessage(from);
-            } else if (messageText.includes("siparişlerim")) {
+            if (buttonId === "siparislerim" || messageText.includes("siparişlerim")) {
                 const orders = await getOrdersByPhone(from);
-                await sendWhatsAppMessage(from, orders);
+                if (orders.includes("Telefon numaranıza ait sipariş bulunmamaktadır")) {
+                    await sendWhatsAppMessage(from, orders); // Sipariş numarası iste
+                } else {
+                    await sendWhatsAppMessage(from, orders); // Sipariş bilgilerini gönder
+                }
+            } else if (messageText.match(/^\d+$/)) { // Sipariş numarası girilmişse
+                const orderDetails = await getOrderByOrderNumber(messageText);
+                if (orderDetails.includes("bulunamadı")) {
+                    await sendCustomerSupportMessage(from); // Müşteri temsilcisine bağlan butonu
+                } else {
+                    await sendWhatsAppMessage(from, orderDetails); // Sipariş detaylarını gönder
+                }
+            } else if (messageText.includes("merhaba")) {
+                await sendWhatsAppInteractiveMessage(from);
             } else {
                 await sendWhatsAppMessage(from, `Merhaba! Size nasıl yardımcı olabilirim?`);
             }
@@ -77,7 +89,7 @@ async function sendWhatsAppInteractiveMessage(to) {
             body: { text: "Merhaba! Size nasıl yardımcı olabilirim?" },
             action: {
                 buttons: [
-                    { type: "reply", reply: { id: "siparisim", title: "📦 Siparişlerim" } },
+                    { type: "reply", reply: { id: "siparislerim", title: "📦 Siparişlerim" } },
                     { type: "reply", reply: { id: "siparisim_nerede", title: "🚚 Siparişim Nerede?" } },
                     { type: "reply", reply: { id: "iade_iptal", title: "🔄 İade ve İptal" } }
                 ]
@@ -184,7 +196,7 @@ async function getOrdersByPhone(phone) {
         const userOrders = orders.filter(order => order.customer && order.customer.phone === normalizedPhone);
 
         if (userOrders.length === 0) {
-            return "📦 Telefon numaranıza ait sipariş bulunmamaktadır.";
+            return "📦 Telefon numaranıza ait sipariş bulunmamaktadır. Lütfen sipariş numaranızı girin:";
         }
 
         let orderList = "📦 **Siparişleriniz**:\n\n";
@@ -206,7 +218,100 @@ async function getOrdersByPhone(phone) {
     }
 }
 
-// ✅ **7. Sipariş Durumlarını Türkçeye Çevir**
+// ✅ **7. Sipariş Numarasına Göre Sipariş Getirme**
+async function getOrderByOrderNumber(orderNumber) {
+    const token = await getAccessToken();
+    if (!token) {
+        return "⚠️ Sipariş bilgilerinize ulaşılamıyor.";
+    }
+
+    const query = {
+        query: `
+        query {
+            listOrder {
+                data {
+                    orderNumber
+                    status
+                    totalFinalPrice
+                    currencyCode
+                    customer {
+                        phone
+                    }
+                    orderLineItems {
+                        finalPrice
+                        quantity
+                        variant {
+                            name
+                            mainImageId
+                        }
+                    }
+                }
+            }
+        }`
+    };
+
+    try {
+        const response = await axios.post(IKAS_API_GRAPHQL_URL, query, {
+            headers: {
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "application/json"
+            }
+        });
+
+        const orders = response.data.data.listOrder.data;
+        const order = orders.find(order => order.orderNumber === orderNumber);
+
+        if (!order) {
+            return "⚠️ Sipariş numarasına ait sipariş bulunamadı.";
+        }
+
+        let orderDetails = `🆔 **Sipariş No:** ${order.orderNumber}\n🔹 **Durum:** ${translateStatus(order.status)}\n💰 **Toplam Fiyat:** ${order.totalFinalPrice} ${order.currencyCode}\n`;
+
+        order.orderLineItems.forEach(item => {
+            orderDetails += `📌 **Ürün:** ${item.variant.name}\n🖼️ **Görsel:** https://cdn.myikas.com/${item.variant.mainImageId}\n🔢 **Adet:** ${item.quantity}\n💵 **Birim Fiyat:** ${item.finalPrice} ${order.currencyCode}\n\n`;
+        });
+
+        return orderDetails;
+    } catch (error) {
+        console.error("❌ İKAS API hata:", error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
+        return "⚠️ Sipariş bilgilerinize ulaşırken hata oluştu.";
+    }
+}
+
+// ✅ **8. Müşteri Temsilcisine Bağlanma Butonu**
+async function sendCustomerSupportMessage(to) {
+    const url = `https://graph.facebook.com/v17.0/${PHONE_NUMBER_ID}/messages`;
+
+    const data = {
+        messaging_product: "whatsapp",
+        recipient_type: "individual",
+        to: to,
+        type: "interactive",
+        interactive: {
+            type: "button",
+            body: { text: "Sipariş numarasına ait sipariş bulunamadı. Dilerseniz müşteri temsilcisinden destek alabilirsiniz." },
+            action: {
+                buttons: [
+                    { type: "reply", reply: { id: "musteri_temsilcisi", title: "📞 Müşteri Temsilcisine Bağlan" } }
+                ]
+            }
+        }
+    };
+
+    try {
+        const response = await axios.post(url, data, {
+            headers: {
+                Authorization: `Bearer ${ACCESS_TOKEN}`,
+                "Content-Type": "application/json"
+            }
+        });
+        console.log("✅ Butonlu mesaj gönderildi:", response.data);
+    } catch (error) {
+        console.error("❌ Butonlu mesaj gönderme hatası:", error.response ? error.response.data : error.message);
+    }
+}
+
+// ✅ **9. Sipariş Durumlarını Türkçeye Çevir**
 function translateStatus(status) {
     const statusMap = {
         "PENDING": "Beklemede",
