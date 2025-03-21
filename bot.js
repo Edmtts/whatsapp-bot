@@ -213,7 +213,7 @@ async function sendOrderList(to, orders) {
     for (const order of orders) {
         const orderMessage = `🆔 **Sipariş No:** ${order.orderNumber}\n` +
                             `🔹 **Durum:** ${translateStatus(order.status)}\n` +
-                            `📅 **Sipariş Tarihi:** ${order.createdAt || "Bilinmiyor"}\n\n` +
+                            `📅 **Sipariş Tarihi:** ${formatTimestamp(order.createdAt)}\n\n` +
                             `🔍 Detayları görmek için butona basın:`;
 
         const data = {
@@ -299,7 +299,7 @@ async function getOrderDetails(orderNumber) {
 
         let orderDetails = `🆔 **Sipariş No:** ${order.orderNumber}\n`;
         orderDetails += `🔹 **Durum:** ${translateStatus(order.status)}\n`;
-        orderDetails += `📅 **Sipariş Tarihi:** ${order.createdAt || "Bilinmiyor"}\n`;
+        orderDetails += `📅 **Sipariş Tarihi:** ${formatTimestamp(order.createdAt)}\n`;
         orderDetails += `💰 **Toplam Fiyat:** ${order.totalFinalPrice} ${order.currencyCode}\n\n`;
         orderDetails += `📦 **Ürünler**:\n`;
 
@@ -377,6 +377,20 @@ function translateStatus(status) {
         "FAILED": "Başarısız"
     };
     return statusMap[status] || status;
+}
+
+// ✅ **11. Timestamp'i Tarih Formatına Çevir**
+function formatTimestamp(timestamp) {
+    if (!timestamp) return "Bilinmiyor";
+    const date = new Date(Number(timestamp));
+    return date.toLocaleDateString("tr-TR", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit"
+    });
 }
 
 // **Sunucuyu Başlat**
