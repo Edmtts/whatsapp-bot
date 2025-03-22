@@ -149,6 +149,7 @@ async function getAccessToken() {
 }
 
 // ✅ **6. Telefon Numarasına Göre Siparişleri Getirme**
+// ✅ **6. Telefon Numarasına Göre Siparişleri Getirme**
 async function getOrdersByPhone(phone) {
     const token = await getAccessToken();
     if (!token) {
@@ -212,11 +213,8 @@ async function getOrdersByPhone(phone) {
                 orderDetails += `📌 **Ürün:** ${item.variant.name}\n💵 **Fiyat:** ${item.finalPrice} ${order.currencyCode}\n\n`;
             });
 
-            // Sipariş detaylarını gönder
-            await sendWhatsAppMessage(phone, orderDetails);
-
-            // Siparişi İncele Butonunu Gönder
-            await sendWhatsAppInteractiveOrderMessage(phone, order.orderNumber);
+            // Sipariş detaylarını ve butonu tek bir mesajda gönder
+            await sendWhatsAppInteractiveOrderMessage(phone, orderDetails, order.orderNumber);
         }
     } catch (error) {
         console.error("❌ İKAS API hata:", error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
@@ -224,8 +222,8 @@ async function getOrdersByPhone(phone) {
     }
 }
 
-// ✅ **7. Siparişe Özel Butonlu Mesaj Gönderme**
-async function sendWhatsAppInteractiveOrderMessage(to, orderNumber) {
+// ✅ **7. Sipariş Detayları ve Butonlu Mesaj Gönderme**
+async function sendWhatsAppInteractiveOrderMessage(to, orderDetails, orderNumber) {
     const url = `https://graph.facebook.com/v17.0/${PHONE_NUMBER_ID}/messages`;
 
     const data = {
@@ -235,7 +233,7 @@ async function sendWhatsAppInteractiveOrderMessage(to, orderNumber) {
         type: "interactive",
         interactive: {
             type: "button",
-            body: { text: `Sipariş No: ${orderNumber}\nBu siparişi incelemek için butona tıklayın.` },
+            body: { text: orderDetails }, // Sipariş detayları burada gösteriliyor
             action: {
                 buttons: [
                     { type: "reply", reply: { id: `incele_${orderNumber}`, title: "🔍 Siparişi İncele" } }
@@ -251,12 +249,11 @@ async function sendWhatsAppInteractiveOrderMessage(to, orderNumber) {
                 "Content-Type": "application/json"
             }
         });
-        console.log("✅ Butonlu mesaj gönderildi:", response.data);
+        console.log("✅ Sipariş detayları ve buton gönderildi:", response.data);
     } catch (error) {
-        console.error("❌ Butonlu mesaj gönderme hatası:", error.response ? error.response.data : error.message);
+        console.error("❌ Sipariş detayları ve buton gönderme hatası:", error.response ? error.response.data : error.message);
     }
 }
-
 // ✅ **8. Sipariş Durumlarını Türkçeye Çevir**
 function translateStatus(status) {
     const statusMap = {
