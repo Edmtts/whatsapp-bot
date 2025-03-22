@@ -150,6 +150,7 @@ async function getAccessToken() {
 }
 
 // ✅ **6. Telefon Numarasına Göre Siparişleri Getirme**
+// ✅ **6. Telefon Numarasına Göre Siparişleri Getirme**
 async function getOrdersByPhone(phone) {
     const token = await getAccessToken();
     if (!token) {
@@ -168,6 +169,7 @@ async function getOrdersByPhone(phone) {
                     status
                     totalFinalPrice
                     currencyCode
+                    createdAt
                     customer {
                         phone
                     }
@@ -199,19 +201,35 @@ async function getOrdersByPhone(phone) {
             return "📦 Telefon numaranıza ait sipariş bulunmamaktadır.";
         }
 
-        let orderList = "📦 **Siparişleriniz**:\n\n";
+        let orderList = [];
         userOrders.forEach(order => {
             let statusTR = translateStatus(order.status);
-            orderList += `🆔 **Sipariş No:** ${order.orderNumber}\n🔹 **Durum:** ${statusTR}\n💰 **Toplam Fiyat:** ${order.totalFinalPrice} ${order.currencyCode}\n`;
+            let orderDate = new Date(order.createdAt).toLocaleDateString('tr-TR'); // Tarih formatı
+
+            let orderDetails = `🆔 **Sipariş No:** ${order.orderNumber}\n📅 **Sipariş Tarihi:** ${orderDate}\n🔹 **Durum:** ${statusTR}\n💰 **Toplam Fiyat:** ${order.totalFinalPrice} ${order.currencyCode}\n`;
 
             order.orderLineItems.forEach(item => {
-                orderList += `📌 **Ürün:** ${item.variant.name}\n🖼️ **Görsel:** https://cdn.myikas.com/${item.variant.mainImageId}\n🔢 **Adet:** ${item.quantity}\n💵 **Birim Fiyat:** ${item.finalPrice} ${order.currencyCode}\n\n`;
+                orderDetails += `📌 **Ürün:** ${item.variant.name}\n💵 **Fiyat:** ${item.finalPrice} ${order.currencyCode}\n\n`;
             });
 
-            orderList += `--------------------------------\n`;
+            // Siparişi İncele Butonu
+            orderDetails += {
+                type: "interactive",
+                interactive: {
+                    type: "button",
+                    body: { text: "Siparişiniz hakkında daha fazla bilgi almak için butona tıklayın." },
+                    action: {
+                        buttons: [
+                            { type: "reply", reply: { id: `incele_${order.orderNumber}`, title: "🔍 Siparişi İncele" } }
+                        ]
+                    }
+                }
+            };
+
+            orderList.push(orderDetails);
         });
 
-        return orderList;
+        return orderList.join("\n--------------------------------\n");
     } catch (error) {
         console.error("❌ İKAS API hata:", error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
         return "⚠️ Sipariş bilgilerinize ulaşırken hata oluştu.";
