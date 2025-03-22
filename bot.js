@@ -42,15 +42,27 @@ app.post('/webhook', async (req, res) => {
 
         if (messageData && messageData.from) {
             const from = messageData.from;
-            const messageText = messageData.text ? messageData.text.body.toLowerCase() : "";
+            let messageText = messageData.text ? messageData.text.body.toLowerCase() : "";
 
-            console.log(`📩 Yeni mesaj alındı: "${messageText}" (Gönderen: ${from})`);
-
-            if (messageText.includes("merhaba")) {
+            if (messageData.type === "interactive") {
+                const buttonId = messageData.interactive.button_reply.id;
+                switch (buttonId) {
+                    case "siparisim":
+                        const orders = await getOrdersByPhone(from);
+                        await sendWhatsAppMessage(from, orders);
+                        break;
+                    case "siparisim_nerede":
+                        // Siparişin durumu ile ilgili fonksiyonu burada çağırabilirsiniz.
+                        break;
+                    case "iade_iptal":
+                        // İade ve iptal işlemleri ile ilgili fonksiyonu burada çağırabilirsiniz.
+                        break;
+                    default:
+                        await sendWhatsAppMessage(from, `Merhaba! Size nasıl yardımcı olabilirim?`);
+                        break;
+                }
+            } else if (messageText.includes("merhaba")) {
                 await sendWhatsAppInteractiveMessage(from);
-            } else if (messageText.includes("siparişlerim")) {
-                const orders = await getOrdersByPhone(from);
-                await sendWhatsAppMessage(from, orders);
             } else {
                 await sendWhatsAppMessage(from, `Merhaba! Size nasıl yardımcı olabilirim?`);
             }
