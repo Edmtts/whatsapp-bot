@@ -368,6 +368,20 @@ async function sendWhatsAppInteractiveOrderDetails(to, orderDetails, buttons) {
         console.error("❌ Sipariş detayları ve butonlar gönderme hatası:", error.response ? error.response.data : error.message);
     }
 }
+
+// ✅ **10. Sipariş Durumlarını Türkçeye Çevir**
+function translateStatus(status) {
+    const statusMap = {
+        "PENDING": "Beklemede",
+        "PROCESSING": "Hazırlanıyor",
+        "SHIPPED": "Kargoya Verildi",
+        "DELIVERED": "Teslim Edildi",
+        "CANCELLED": "İptal Edildi",
+        "RETURNED": "İade Edildi",
+        "FAILED": "Başarısız"
+    };
+    return statusMap[status] || status;
+}
 // **Sunucuyu Başlat**
 app.listen(port, () => {
     console.log(`🚀 Sunucu ${port} portunda çalışıyor!`);
