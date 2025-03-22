@@ -321,14 +321,14 @@ async function showOrderDetails(to, orderNumber) {
         // Duruma göre butonlar oluştur
         let buttons = [];
         if (order.status === "SHIPPED") {
-            buttons.push({ type: "reply", reply: { id: `kargo_takip_${order.orderNumber}`, title: "🚚 Kargoyu Takip Et" } });
+            buttons.push({ type: "reply", reply: { id: `kargo_takip_${order.orderNumber}`, title: "🚚 Kargo Takip" } });
         } else if (order.status === "DELIVERED") {
-            buttons.push({ type: "reply", reply: { id: `iade_talep_${order.orderNumber}`, title: "🔄 İade Talep Et" } });
+            buttons.push({ type: "reply", reply: { id: `iade_talep_${order.orderNumber}`, title: "🔄 İade Talep" } });
         }
 
         buttons.push(
-            { type: "reply", reply: { id: `musteri_temsilcisi_${order.orderNumber}`, title: "📞 Müşteri Temsilcisiyle Görüşmek İstiyorum" } },
-            { type: "reply", reply: { id: `ana_menu`, title: "🏠 Ana Menüye Dön" } }
+            { type: "reply", reply: { id: `musteri_temsilcisi_${order.orderNumber}`, title: "📞 Müşteri Temsilcisi" } },
+            { type: "reply", reply: { id: `ana_menu`, title: "🏠 Ana Menü" } }
         );
 
         // Sipariş detaylarını ve butonları gönder
@@ -338,6 +338,7 @@ async function showOrderDetails(to, orderNumber) {
         await sendWhatsAppMessage(to, "⚠️ Sipariş bilgilerinize ulaşırken hata oluştu.");
     }
 }
+
 // ✅ **9. Sipariş Detayları ve Dinamik Butonlar Gönderme**
 async function sendWhatsAppInteractiveOrderDetails(to, orderDetails, buttons) {
     const url = `https://graph.facebook.com/v17.0/${PHONE_NUMBER_ID}/messages`;
@@ -368,7 +369,6 @@ async function sendWhatsAppInteractiveOrderDetails(to, orderDetails, buttons) {
         console.error("❌ Sipariş detayları ve butonlar gönderme hatası:", error.response ? error.response.data : error.message);
     }
 }
-
 // ✅ **10. Sipariş Durumlarını Türkçeye Çevir**
 function translateStatus(status) {
     const statusMap = {
