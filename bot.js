@@ -42,27 +42,15 @@ app.post('/webhook', async (req, res) => {
 
         if (messageData && messageData.from) {
             const from = messageData.from;
-            let messageText = messageData.text ? messageData.text.body.toLowerCase() : "";
 
             if (messageData.type === "interactive") {
                 const buttonId = messageData.interactive.button_reply.id;
-                switch (buttonId) {
-                    case "siparisim":
-                        const orders = await getOrdersByPhone(from);
-                        await sendWhatsAppOrderMessages(from, orders);
-                        break;
-                    case "siparisim_nerede":
-                        // Siparişin durumu ile ilgili fonksiyonu burada çağırabilirsiniz.
-                        break;
-                    case "iade_iptal":
-                        // İade ve iptal işlemleri ile ilgili fonksiyonu burada çağırabilirsiniz.
-                        break;
-                    default:
-                        await sendWhatsAppMessage(from, `Merhaba! Size nasıl yardımcı olabilirim?`);
-                        break;
+                if (buttonId === "siparisim") {
+                    const orders = await getOrdersByPhone(from);
+                    await sendWhatsAppOrderMessages(from, orders);
+                } else {
+                    await sendWhatsAppMessage(from, `Merhaba! Size nasıl yardımcı olabilirim?`);
                 }
-            } else if (messageText.includes("merhaba")) {
-                await sendWhatsAppInteractiveMessage(from);
             } else {
                 await sendWhatsAppMessage(from, `Merhaba! Size nasıl yardımcı olabilirim?`);
             }
@@ -75,26 +63,14 @@ app.post('/webhook', async (req, res) => {
     }
 });
 
-// ✅ **3. WhatsApp İnteraktif Mesajları Gönderme Fonksiyonu**
-async function sendWhatsAppInteractiveMessage(to) {
+// ✅ **3. WhatsApp Mesaj Gönderme**
+async function sendWhatsAppMessage(to, message) {
     const url = `https://graph.facebook.com/v17.0/${PHONE_NUMBER_ID}/messages`;
-
     const data = {
         messaging_product: "whatsapp",
-        recipient_type: "individual",
         to: to,
-        type: "interactive",
-        interactive: {
-            type: "button",
-            body: { text: "Merhaba! Size nasıl yardımcı olabilirim?" },
-            action: {
-                buttons: [
-                    { type: "reply", reply: { id: "siparisim", title: "📦 Siparişlerim" } },
-                    { type: "reply", reply: { id: "siparisim_nerede", title: "🚚 Siparişim Nerede?" } },
-                    { type: "reply", reply: { id: "iade_iptal", title: "🔄 İade ve İptal" } }
-                ]
-            }
-        }
+        type: "text",
+        text: { body: message }
     };
 
     try {
@@ -104,16 +80,23 @@ async function sendWhatsAppInteractiveMessage(to) {
                 "Content-Type": "application/json"
             }
         });
-        console.log("✅ İnteraktif mesaj gönderildi:", response.data);
+        console.log("✅ Mesaj gönderildi:", response.data);
     } catch (error) {
-        console.error("❌ İnteraktif mesaj gönderme hatası:", error.response ? error.response.data : error.message);
+        console.error("❌ WhatsApp mesaj gönderme hatası:", error.response ? error.response.data : error.message);
     }
 }
 
-// ✅ **4. Sipariş Detayları İçin İnteraktif Mesaj Gönderme**
+// ✅ **4. Siparişleri Ayrı Ayrı Mesaj Olarak Gönderme ve Buton Ekleme**
+async function sendWhatsAppOrderMessages(to, orders) {
+    for (const order of orders) {
+        const message = `Sipariş Tarihi: ${order.date}\nSipariş No: ${order.orderNumber}\nÜrün: ${order.productName}\nFiyat: ${order.price}`;
+        await sendWhatsAppInteractiveOrderMessage(to, message, order.orderNumber);
+    }
+}
+
+// ✅ **5. Sipariş Detayları İçin İnteraktif Mesaj Gönderme**
 async function sendWhatsAppInteractiveOrderMessage(to, message, orderId) {
     const url = `https://graph.facebook.com/v17.0/${PHONE_NUMBER_ID}/messages`;
-
     const data = {
         messaging_product: "whatsapp",
         recipient_type: "individual",
@@ -143,26 +126,11 @@ async function sendWhatsAppInteractiveOrderMessage(to, message, orderId) {
     }
 }
 
-// ✅ **5. İKAS API'den Access Token Alma**
-async function getAccessToken() {
-    try {
-        const response = await axios.post(IKAS_API_TOKEN_URL, 
-            `grant_type=client_credentials&client_id=${IKAS_CLIENT_ID}&client_secret=${IKAS_CLIENT_SECRET}`,
-            { headers: { "Content-Type": "application/x-www-form-urlencoded" } }
-        );
-        console.log("✅ Access Token alındı:", response.data.access_token);
-        return response.data.access_token;
-    } catch (error) {
-        console.error("❌ Access Token alma hatası:", error.response ? error.response.data : error.message);
-        return null;
-    }
-}
 // ✅ **6. Telefon Numarasına Göre Siparişleri Getirme**
 async function getOrdersByPhone(phone) {
     const token = await getAccessToken();
     if (!token) {
-        console.log("Access token could not be retrieved.");
-        return [];
+        return "⚠️ Sipariş bilgilerinize ulaşılamıyor.";
     }
 
     const normalizedPhone = "+90" + phone.replace(/\D/g, "").slice(-10);
@@ -212,6 +180,20 @@ async function getOrdersByPhone(phone) {
     }
 }
 
+// ✅ **7. Access Token Alma**
+async function getAccessToken() {
+    try {
+        const response = await axios.post(IKAS_API_TOKEN_URL, 
+            `grant_type=client_credentials&client_id=${IKAS_CLIENT_ID}&client_secret=${IKAS_CLIENT_SECRET}`,
+            { headers: { "Content-Type": "application/x-www-form-urlencoded" } }
+        );
+        console.log("✅ Access Token alındı:", response.data.access_token);
+        return response.data.access_token;
+    } catch (error) {
+        console.error("❌ Access Token alma hatası:", error.response ? error.response.data : error.message);
+        return null;
+    }
+}
 
 // **Sunucuyu Başlat**
 app.listen(port, () => {
