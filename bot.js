@@ -46,19 +46,26 @@ app.post('/webhook', async (req, res) => {
 
             if (messageData.type === "interactive") {
                 const buttonId = messageData.interactive.button_reply.id;
-                switch (buttonId) {
-                    case "siparisim":
-                        await getOrdersByPhone(from);
-                        break;
-                    case "siparisim_nerede":
-                        await sendWhatsAppMessage(from, "Siparişinizin durumunu öğrenmek için çalışıyoruz...");
-                        break;
-                    case "iade_iptal":
-                        await sendWhatsAppMessage(from, "İade ve iptal işlemleri için lütfen destek ekibimizle iletişime geçin.");
-                        break;
-                    default:
-                        await sendWhatsAppMessage(from, `Merhaba! Size nasıl yardımcı olabilirim?`);
-                        break;
+
+                // Siparişi İncele butonuna tıklandığında
+                if (buttonId.startsWith("incele_")) {
+                    const orderNumber = buttonId.split("_")[1]; // Sipariş numarasını al
+                    await showOrderDetails(from, orderNumber); // Sipariş detaylarını göster
+                } else {
+                    switch (buttonId) {
+                        case "siparisim":
+                            await getOrdersByPhone(from);
+                            break;
+                        case "siparisim_nerede":
+                            await sendWhatsAppMessage(from, "Siparişinizin durumunu öğrenmek için çalışıyoruz...");
+                            break;
+                        case "iade_iptal":
+                            await sendWhatsAppMessage(from, "İade ve iptal işlemleri için lütfen destek ekibimizle iletişime geçin.");
+                            break;
+                        default:
+                            await sendWhatsAppMessage(from, `Merhaba! Size nasıl yardımcı olabilirim?`);
+                            break;
+                    }
                 }
             } else if (messageText.includes("merhaba")) {
                 await sendWhatsAppInteractiveMessage(from);
@@ -254,20 +261,113 @@ async function sendWhatsAppInteractiveOrderMessage(to, orderDetails, orderNumber
         console.error("❌ Sipariş detayları ve buton gönderme hatası:", error.response ? error.response.data : error.message);
     }
 }
-// ✅ **8. Sipariş Durumlarını Türkçeye Çevir**
-function translateStatus(status) {
-    const statusMap = {
-        "PENDING": "Beklemede",
-        "PROCESSING": "Hazırlanıyor",
-        "SHIPPED": "Kargoya Verildi",
-        "DELIVERED": "Teslim Edildi",
-        "CANCELLED": "İptal Edildi",
-        "RETURNED": "İade Edildi",
-        "FAILED": "Başarısız"
-    };
-    return statusMap[status] || status;
-}
+// ✅ **8. Sipariş Detaylarını Göster ve Duruma Göre Butonlar Ekle**
+async function showOrderDetails(to, orderNumber) {
+    const token = await getAccessToken();
+    if (!token) {
+        await sendWhatsAppMessage(to, "⚠️ Sipariş bilgilerinize ulaşılamıyor.");
+        return;
+    }
 
+    const query = {
+        query: `
+        query {
+            listOrder {
+                data {
+                    orderNumber
+                    status
+                    totalFinalPrice
+                    currencyCode
+                    createdAt
+                    customer {
+                        phone
+                    }
+                    orderLineItems {
+                        finalPrice
+                        quantity
+                        variant {
+                            name
+                            mainImageId
+                        }
+                    }
+                }
+            }
+        }`
+    };
+
+    try {
+        const response = await axios.post(IKAS_API_GRAPHQL_URL, query, {
+            headers: {
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "application/json"
+            }
+        });
+
+        const orders = response.data.data.listOrder.data;
+        const order = orders.find(order => order.orderNumber === orderNumber);
+
+        if (!order) {
+            await sendWhatsAppMessage(to, "⚠️ Sipariş bulunamadı.");
+            return;
+        }
+
+        let statusTR = translateStatus(order.status);
+        let orderDetails = `🆔 **Sipariş No:** ${order.orderNumber}\n📅 **Sipariş Tarihi:** ${new Date(order.createdAt).toLocaleDateString('tr-TR')}\n🔹 **Durum:** ${statusTR}\n💰 **Toplam Fiyat:** ${order.totalFinalPrice} ${order.currencyCode}\n`;
+
+        order.orderLineItems.forEach(item => {
+            orderDetails += `📌 **Ürün:** ${item.variant.name}\n💵 **Fiyat:** ${item.finalPrice} ${order.currencyCode}\n\n`;
+        });
+
+        // Duruma göre butonlar oluştur
+        let buttons = [];
+        if (order.status === "SHIPPED") {
+            buttons.push({ type: "reply", reply: { id: `kargo_takip_${order.orderNumber}`, title: "🚚 Kargoyu Takip Et" } });
+        } else if (order.status === "DELIVERED") {
+            buttons.push({ type: "reply", reply: { id: `iade_talep_${order.orderNumber}`, title: "🔄 İade Talep Et" } });
+        }
+
+        buttons.push(
+            { type: "reply", reply: { id: `musteri_temsilcisi_${order.orderNumber}`, title: "📞 Müşteri Temsilcisiyle Görüşmek İstiyorum" } },
+            { type: "reply", reply: { id: `ana_menu`, title: "🏠 Ana Menüye Dön" } }
+        );
+
+        // Sipariş detaylarını ve butonları gönder
+        await sendWhatsAppInteractiveOrderDetails(to, orderDetails, buttons);
+    } catch (error) {
+        console.error("❌ İKAS API hata:", error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
+        await sendWhatsAppMessage(to, "⚠️ Sipariş bilgilerinize ulaşırken hata oluştu.");
+    }
+}
+// ✅ **9. Sipariş Detayları ve Dinamik Butonlar Gönderme**
+async function sendWhatsAppInteractiveOrderDetails(to, orderDetails, buttons) {
+    const url = `https://graph.facebook.com/v17.0/${PHONE_NUMBER_ID}/messages`;
+
+    const data = {
+        messaging_product: "whatsapp",
+        recipient_type: "individual",
+        to: to,
+        type: "interactive",
+        interactive: {
+            type: "button",
+            body: { text: orderDetails }, // Sipariş detayları burada gösteriliyor
+            action: {
+                buttons: buttons // Dinamik butonlar burada kullanılıyor
+            }
+        }
+    };
+
+    try {
+        const response = await axios.post(url, data, {
+            headers: {
+                Authorization: `Bearer ${ACCESS_TOKEN}`,
+                "Content-Type": "application/json"
+            }
+        });
+        console.log("✅ Sipariş detayları ve butonlar gönderildi:", response.data);
+    } catch (error) {
+        console.error("❌ Sipariş detayları ve butonlar gönderme hatası:", error.response ? error.response.data : error.message);
+    }
+}
 // **Sunucuyu Başlat**
 app.listen(port, () => {
     console.log(`🚀 Sunucu ${port} portunda çalışıyor!`);
