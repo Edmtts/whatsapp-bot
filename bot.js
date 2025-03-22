@@ -76,11 +76,38 @@ app.post('/webhook', async (req, res) => {
 });
 
 // ✅ **3. WhatsApp İnteraktif Mesajları Gönderme Fonksiyonu**
-async function sendWhatsAppOrderMessages(to, orders) {
-    orders.forEach(async (order) => {
-        const message = `Sipariş Tarihi: ${order.date}\nSipariş No: ${order.orderNumber}\nÜrün: ${order.productName}\nFiyat: ${order.price}`;
-        await sendWhatsAppInteractiveOrderMessage(to, message, order.orderNumber);
-    });
+async function sendWhatsAppInteractiveMessage(to) {
+    const url = `https://graph.facebook.com/v17.0/${PHONE_NUMBER_ID}/messages`;
+
+    const data = {
+        messaging_product: "whatsapp",
+        recipient_type: "individual",
+        to: to,
+        type: "interactive",
+        interactive: {
+            type: "button",
+            body: { text: "Merhaba! Size nasıl yardımcı olabilirim?" },
+            action: {
+                buttons: [
+                    { type: "reply", reply: { id: "siparisim", title: "📦 Siparişlerim" } },
+                    { type: "reply", reply: { id: "siparisim_nerede", title: "🚚 Siparişim Nerede?" } },
+                    { type: "reply", reply: { id: "iade_iptal", title: "🔄 İade ve İptal" } }
+                ]
+            }
+        }
+    };
+
+    try {
+        const response = await axios.post(url, data, {
+            headers: {
+                Authorization: `Bearer ${ACCESS_TOKEN}`,
+                "Content-Type": "application/json"
+            }
+        });
+        console.log("✅ İnteraktif mesaj gönderildi:", response.data);
+    } catch (error) {
+        console.error("❌ İnteraktif mesaj gönderme hatası:", error.response ? error.response.data : error.message);
+    }
 }
 
 // ✅ **4. Sipariş Detayları İçin İnteraktif Mesaj Gönderme**
