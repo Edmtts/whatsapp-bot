@@ -157,6 +157,61 @@ async function getAccessToken() {
         return null;
     }
 }
+// ✅ **6. Telefon Numarasına Göre Siparişleri Getirme**
+async function getOrdersByPhone(phone) {
+    const token = await getAccessToken();
+    if (!token) {
+        console.log("Access token could not be retrieved.");
+        return [];
+    }
+
+    const normalizedPhone = "+90" + phone.replace(/\D/g, "").slice(-10);
+    const query = {
+        query: `
+        query {
+            listOrder {
+                data {
+                    orderNumber
+                    status
+                    totalFinalPrice
+                    currencyCode
+                    customer {
+                        phone
+                    }
+                    orderLineItems {
+                        finalPrice
+                        quantity
+                        variant {
+                            name
+                            mainImageId
+                        }
+                    }
+                }
+            }
+        }`
+    };
+
+    try {
+        const response = await axios.post(IKAS_API_GRAPHQL_URL, query, {
+            headers: {
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "application/json"
+            }
+        });
+
+        const orders = response.data.data.listOrder.data.filter(order => order.customer && order.customer.phone === normalizedPhone);
+        return orders.map(order => ({
+            date: new Date(order.date).toLocaleDateString(), // Assuming 'date' is available and needs formatting
+            orderNumber: order.orderNumber,
+            productName: order.orderLineItems.map(item => item.variant.name).join(", "),
+            price: `${order.totalFinalPrice} ${order.currencyCode}`
+        }));
+    } catch (error) {
+        console.error("Error retrieving orders:", error.message);
+        return [];
+    }
+}
+
 
 // **Sunucuyu Başlat**
 app.listen(port, () => {
